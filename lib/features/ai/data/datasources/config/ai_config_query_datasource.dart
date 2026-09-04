@@ -83,6 +83,12 @@ class AiConfigQueryDatasource {
     if (configStr.isNotEmpty) {
       try {
         final config = AiConfigDto.fromJson(jsonDecode(configStr));
+        if (isRetiredBuiltinAiConfigId(config.id)) {
+          await _storage.remove(_currentConfigStorageKey);
+          await _storage.remove('ai_builtin_api_key_${config.id}');
+          await _storage.remove('$_builtinConfigOverrideKeyPrefix${config.id}');
+          return getBuiltinConfig();
+        }
         if (isBuiltinAiConfigId(config.id)) {
           final builtinConfig = await getBuiltinConfig(config.id);
           return config.copyWith(

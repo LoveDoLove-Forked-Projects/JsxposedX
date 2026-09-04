@@ -38,7 +38,9 @@ class FridaInjector(
         }
 
         if (enabledScripts.isEmpty()) {
-            shell.write("", hookJsPath)
+            if (!shell.write("", hookJsPath)) {
+                throw IllegalStateException("Unable to write $hookJsPath")
+            }
             return hookJsPath
         }
 
@@ -60,18 +62,33 @@ class FridaInjector(
                 continue
             }
             val displayName = scriptPath.substringAfterLast("/")
+            val escapedName = displayName
+                .replace("\\", "\\\\")
+                .replace("'", "\\'")
             builder.appendLine("    // ===== [$displayName] =====")
             builder.appendLine("    (function() {")
+            builder.appendLine("    var __jxScriptName = '$escapedName';")
+            builder.appendLine("    var console = {")
+            builder.appendLine("        log: function() { Fx._logWithScript(__jxScriptName, 'I', arguments); },")
+            builder.appendLine("        info: function() { Fx._logWithScript(__jxScriptName, 'I', arguments); },")
+            builder.appendLine("        debug: function() { Fx._logWithScript(__jxScriptName, 'D', arguments); },")
+            builder.appendLine("        warn: function() { Fx._logWithScript(__jxScriptName, 'W', arguments); },")
+            builder.appendLine("        error: function() { Fx._logWithScript(__jxScriptName, 'E', arguments); }")
+            builder.appendLine("    };")
+            builder.appendLine("    Fx._activeScript = __jxScriptName;")
             builder.appendLine("    try {")
             builder.appendLine(content.prependIndent("    "))
-            builder.appendLine("    } catch(e) { console.error('[$displayName]', e); }")
+            builder.appendLine("    } catch(e) { console.error(e); }")
+            builder.appendLine("    Fx._activeScript = null;")
             builder.appendLine("    })();")
             builder.appendLine()
         }
 
         builder.appendLine("});")
         val hookJsContent = builder.toString()
-        shell.write(hookJsContent, hookJsPath)
+        if (!shell.write(hookJsContent, hookJsPath)) {
+            throw IllegalStateException("Unable to write $hookJsPath")
+        }
         return hookJsPath
     }
 }

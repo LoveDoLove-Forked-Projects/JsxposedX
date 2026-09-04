@@ -8,11 +8,9 @@ import 'package:JsxposedX/core/networks/http_service.dart';
 import 'package:JsxposedX/core/providers/pinia_provider.dart';
 import 'package:JsxposedX/features/ai/data/datasources/chat/ai_chat_action_datasource.dart';
 import 'package:JsxposedX/features/ai/data/repositories/chat/ai_chat_action_repository_impl.dart';
-import 'package:JsxposedX/features/ai/domain/constants/builtin_ai_config.dart';
 import 'package:JsxposedX/features/ai/domain/contracts/ai_chat_tool_executor_contract.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_session_context.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_environment_snapshot.dart';
-import 'package:JsxposedX/features/ai/domain/models/padi_chat_options.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_response_issue.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_session_init_state.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_thinking_markup.dart';
@@ -221,9 +219,6 @@ class AiChatAction extends _$AiChatAction {
     final storedContext = await ref
         .read(aiChatQueryRepositoryProvider)
         .getSessionContext(packageName, sessionId);
-    final storedPadiChatOptions = await ref
-        .read(aiChatQueryRepositoryProvider)
-        .getPadiChatOptions(packageName, sessionId);
     if (_isDisposed) {
       return;
     }
@@ -251,8 +246,6 @@ class AiChatAction extends _$AiChatAction {
       sessionContext: contextAssembly.context,
       contextStats: contextAssembly.context.stats,
       contextVersion: contextAssembly.context.version,
-      currentPadiChatOptions:
-          storedPadiChatOptions ?? PadiChatOptions.defaults(),
     );
     await ref
         .read(aiChatActionRepositoryProvider)
@@ -275,7 +268,6 @@ class AiChatAction extends _$AiChatAction {
 
   Future<void> createSession(String name) async {
     final sessionId = const Uuid().v4();
-    final initialPadiChatOptions = state.currentPadiChatOptions;
     final sessionRules = state.systemPrompt ?? '';
     final session = AiSession(
       id: sessionId,
@@ -298,15 +290,11 @@ class AiChatAction extends _$AiChatAction {
       sessionContext: AiChatSessionContext(sessionRules: sessionRules),
       contextStats: const AiChatContextStats(),
       contextVersion: AiChatSessionContext.currentVersion,
-      currentPadiChatOptions: initialPadiChatOptions,
     );
 
     await ref
         .read(aiChatActionRepositoryProvider)
         .saveSessions(packageName, updatedSessions);
-    await ref
-        .read(aiChatActionRepositoryProvider)
-        .savePadiChatOptions(packageName, sessionId, initialPadiChatOptions);
     await ref
         .read(aiChatActionRepositoryProvider)
         .saveLastActiveSessionId(packageName, sessionId);
@@ -813,7 +801,6 @@ class AiChatAction extends _$AiChatAction {
         .getChatStream(
           config: config,
           messages: requestMessages,
-          padiChatOptions: _resolvePadiChatOptionsForConfig(config),
           tools: toolsJson,
           cancelToken: cancelToken,
         );
@@ -1252,7 +1239,6 @@ class AiChatAction extends _$AiChatAction {
           ),
           contextStats: const AiChatContextStats(),
           contextVersion: AiChatSessionContext.currentVersion,
-          currentPadiChatOptions: PadiChatOptions.defaults(),
         );
         await ref
             .read(aiChatActionRepositoryProvider)
@@ -1325,26 +1311,6 @@ class AiChatAction extends _$AiChatAction {
     return ref.read(aiChatActionRepositoryProvider).testConnection(config);
   }
 
-  Future<void> updatePadiChatOptions({
-    String? model,
-    String? reasoningEffort,
-    bool? supportsReasoning,
-  }) async {
-    final nextOptions = state.currentPadiChatOptions.copyWith(
-      model: model,
-      reasoningEffort: reasoningEffort,
-      supportsReasoning: supportsReasoning,
-    );
-    state = state.copyWith(currentPadiChatOptions: nextOptions);
-    final sessionId = state.currentSessionId;
-    if (sessionId == null) {
-      return;
-    }
-    await ref
-        .read(aiChatActionRepositoryProvider)
-        .savePadiChatOptions(packageName, sessionId, nextOptions);
-  }
-
   Future<void> deleteHistory() async {
     if (state.currentSessionId != null) {
       await deleteSession(state.currentSessionId!);
@@ -1353,17 +1319,6 @@ class AiChatAction extends _$AiChatAction {
 
   Future<void> clear() async {
     await createSession('新对话 ${DateTime.now().hour}:${DateTime.now().minute}');
-  }
-
-  PadiChatOptions? _resolvePadiChatOptionsForConfig(AiConfig config) {
-    if (!_shouldUsePadiChatOptions(config)) {
-      return null;
-    }
-    return state.currentPadiChatOptions;
-  }
-
-  bool _shouldUsePadiChatOptions(AiConfig config) {
-    return shouldUseBuiltinPadiOptions(config);
   }
 
   Future<void> _saveChatHistory() async {
@@ -1379,13 +1334,6 @@ class AiChatAction extends _$AiChatAction {
       await ref
           .read(aiChatActionRepositoryProvider)
           .saveSessionContext(packageName, sessionId, state.sessionContext);
-      await ref
-          .read(aiChatActionRepositoryProvider)
-          .savePadiChatOptions(
-            packageName,
-            sessionId,
-            state.currentPadiChatOptions,
-          );
 
       final sessionIndex = state.sessions.indexWhere(
         (session) => session.id == sessionId,

@@ -7,7 +7,6 @@ import 'package:JsxposedX/core/providers/pinia_provider.dart';
 import 'package:JsxposedX/features/ai/data/models/ai_message_dto.dart';
 import 'package:JsxposedX/features/ai/data/models/ai_session_dto.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_session_context.dart';
-import 'package:JsxposedX/features/ai/domain/models/padi_chat_options.dart';
 import 'package:JsxposedX/features/ai/domain/services/ai_multimodal_message_codec.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -32,14 +31,12 @@ class AiChatActionDatasource {
   static const String _chatContentKey = 'messages';
   static const String _chatContextKey = 'context';
   static const String _chatConfigKey = 'config';
-  static const String _padiChatOptionsKey = 'padi_chat_options';
   static const Duration _streamReceiveTimeout = Duration(minutes: 5);
   static const String _defaultResponsesReasoningEffort = 'medium';
 
   Stream<AiMessageDto> postChatStream({
     required AiConfig config,
     required List<AiMessageDto> messages,
-    PadiChatOptions? padiChatOptions,
     List<Map<String, dynamic>>? tools,
     CancelToken? cancelToken,
   }) {
@@ -48,7 +45,6 @@ class AiChatActionDatasource {
         return _postOpenAiChatCompletionsStream(
           config: config,
           messages: messages,
-          padiChatOptions: padiChatOptions,
           tools: tools,
           cancelToken: cancelToken,
         );
@@ -56,7 +52,6 @@ class AiChatActionDatasource {
         return _postOpenAiResponsesStream(
           config: config,
           messages: messages,
-          padiChatOptions: padiChatOptions,
           tools: tools,
           cancelToken: cancelToken,
         );
@@ -134,18 +129,6 @@ class AiChatActionDatasource {
     );
   }
 
-  Future<void> savePadiChatOptions(
-    String packageName,
-    String sessionId,
-    PadiChatOptions options,
-  ) async {
-    await _storage.setString(
-      _padiChatOptionsKey,
-      jsonEncode(options.toJson()),
-      space: _getChatSpace(sessionId, packageName),
-    );
-  }
-
   Future<void> removeChatHistory(String packageName, String sessionId) async {
     await _storage.clear(space: _getChatSpace(sessionId, packageName));
   }
@@ -162,13 +145,11 @@ class AiChatActionDatasource {
   Stream<AiMessageDto> _postOpenAiChatCompletionsStream({
     required AiConfig config,
     required List<AiMessageDto> messages,
-    PadiChatOptions? padiChatOptions,
     List<Map<String, dynamic>>? tools,
     CancelToken? cancelToken,
   }) async* {
-    final effectiveModel = padiChatOptions?.model ?? config.moduleName;
     final request = <String, dynamic>{
-      'model': effectiveModel,
+      'model': config.moduleName,
       'messages': messages.map(_mapOpenAiMessage).toList(),
       'stream': true,
       'temperature': config.temperature,
@@ -309,22 +290,16 @@ class AiChatActionDatasource {
   Stream<AiMessageDto> _postOpenAiResponsesStream({
     required AiConfig config,
     required List<AiMessageDto> messages,
-    PadiChatOptions? padiChatOptions,
     List<Map<String, dynamic>>? tools,
     CancelToken? cancelToken,
   }) async* {
-    final instructions = _buildResponsesInstructions(messages);
-    final effectiveModel = padiChatOptions?.model ?? config.moduleName;
-    final effectiveReasoningEffort =
-        padiChatOptions?.reasoningEffort ?? _defaultResponsesReasoningEffort;
     final request = <String, dynamic>{
-      'model': effectiveModel,
+      'model': config.moduleName,
       'input': _mapResponsesInput(messages),
       'stream': true,
       'store': false,
       'include': const ['reasoning.encrypted_content'],
-      if (padiChatOptions?.supportsReasoning ?? true)
-        'reasoning': {'effort': effectiveReasoningEffort},
+      'reasoning': {'effort': _defaultResponsesReasoningEffort},
       'max_output_tokens': config.maxToken,
       if (tools != null && tools.isNotEmpty)
         'tools': tools
@@ -1145,10 +1120,6 @@ class AiChatActionDatasource {
     return OpenAiResponsesPayloadComposer.buildInput(messages);
   }
 
-  String _buildResponsesInstructions(List<AiMessageDto> messages) {
-    return OpenAiResponsesPayloadComposer.buildInstructions(messages);
-  }
-
   Map<String, dynamic> _normalizeOpenAiResponsesTool(
     Map<String, dynamic> tool,
   ) {
@@ -1292,10 +1263,6 @@ final class OpenAiResponsesPayloadComposer {
     }
 
     return input;
-  }
-
-  static String buildInstructions(List<AiMessageDto> messages) {
-    return '';
   }
 
   static Map<String, dynamic> mapMessage(AiMessageDto message) {

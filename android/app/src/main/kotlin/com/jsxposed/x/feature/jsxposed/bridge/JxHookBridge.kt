@@ -20,6 +20,7 @@ class JxHookBridge(
     private val qjs: QuickJSContext,
     private val classLoader: ClassLoader,
     private val dispatcher: JxSingleThreadDispatcher,
+    private val logBridge: JxLogBridge,
 ) {
     private val TAG = "JxHookBridge"
     private val hookIdCounter = AtomicInteger(0)
@@ -210,12 +211,15 @@ class JxHookBridge(
     private fun buildCallback(callbacks: JSObject): XC_MethodHook {
         val beforeCb = callbacks.getProperty("before") as? JSFunction
         val afterCb = callbacks.getProperty("after") as? JSFunction
+        val scriptName = currentScriptKey ?: "<unknown>"
         return object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 try {
                     if (beforeCb != null) {
                         dispatcher.submit {
-                            beforeCb.call(wrapParam(param))
+                            logBridge.withScriptScope(scriptName) {
+                                beforeCb.call(wrapParam(param))
+                            }
                         }
                     }
                 }
@@ -225,7 +229,9 @@ class JxHookBridge(
                 try {
                     if (afterCb != null) {
                         dispatcher.submit {
-                            afterCb.call(wrapParam(param))
+                            logBridge.withScriptScope(scriptName) {
+                                afterCb.call(wrapParam(param))
+                            }
                         }
                     }
                 }

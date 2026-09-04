@@ -5,7 +5,6 @@ import 'package:JsxposedX/features/ai/data/datasources/chat/ai_chat_action_datas
 import 'package:JsxposedX/features/ai/data/models/ai_message_dto.dart';
 import 'package:JsxposedX/features/ai/data/models/ai_session_dto.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_session_context.dart';
-import 'package:JsxposedX/features/ai/domain/models/padi_chat_options.dart';
 import 'package:JsxposedX/features/ai/domain/repositories/chat/ai_chat_action_repository.dart';
 import 'package:dio/dio.dart';
 
@@ -18,7 +17,6 @@ class AiChatActionRepositoryImpl implements AiChatActionRepository {
   Stream<AiMessage> getChatStream({
     required AiConfig config,
     required List<AiMessage> messages,
-    PadiChatOptions? padiChatOptions,
     List<Map<String, dynamic>>? tools,
     CancelToken? cancelToken,
   }) {
@@ -42,7 +40,6 @@ class AiChatActionRepositoryImpl implements AiChatActionRepository {
         .postChatStream(
           config: config,
           messages: messageDtos,
-          padiChatOptions: padiChatOptions,
           tools: tools,
           cancelToken: cancelToken,
         )
@@ -101,15 +98,6 @@ class AiChatActionRepositoryImpl implements AiChatActionRepository {
     AiChatSessionContext context,
   ) {
     return dataSource.saveSessionContext(packageName, sessionId, context);
-  }
-
-  @override
-  Future<void> savePadiChatOptions(
-    String packageName,
-    String sessionId,
-    PadiChatOptions options,
-  ) {
-    return dataSource.savePadiChatOptions(packageName, sessionId, options);
   }
 
   @override

@@ -43,7 +43,11 @@ class AiConfigActionDatasource {
       final List<dynamic> jsonList = jsonDecode(configListStr);
       return jsonList
           .map((json) => AiConfigDto.fromJson(json))
-          .where((config) => !isBuiltinAiConfigId(config.id))
+          .where(
+            (config) =>
+                !isBuiltinAiConfigId(config.id) &&
+                !isRetiredBuiltinAiConfigId(config.id),
+          )
           .toList();
     } catch (e) {
       return [];

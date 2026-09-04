@@ -1,6 +1,7 @@
 package com.jsxposed.x.feature.jsxposed.loader
 
 import android.content.Context
+import android.util.Log
 import com.jsxposed.x.JsXposedTransportConfig
 import com.jsxposed.x.core.bridge.xposed_js_snapshot.XposedScriptSnapshotRepository
 import com.jsxposed.x.core.utils.shell.PiniaRoot
@@ -94,7 +95,11 @@ class ScriptLoader(
             qjs.evaluate(sourceCode, scriptName)
             LogX.d(TAG, "[$packageName] 脚本执行成功: $scriptName")
         } catch (e: Exception) {
-            LogX.e(TAG, "[$packageName] 脚本语法错误或者执行崩溃 ($scriptName): ${e.message}")
+            LogX.e(
+                TAG,
+                "[$packageName] 脚本语法错误或者执行崩溃 ($scriptName): ${e.message}",
+                Log.getStackTraceString(e),
+            )
         }
     }
 }

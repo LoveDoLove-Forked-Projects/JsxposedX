@@ -5,7 +5,6 @@ import 'package:JsxposedX/features/ai/domain/contracts/ai_chat_tools_spec.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_session_context.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_response_issue.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_session_init_state.dart';
-import 'package:JsxposedX/features/ai/domain/models/padi_chat_options.dart';
 
 class AiChatRuntimeState {
   const AiChatRuntimeState({
@@ -25,11 +24,6 @@ class AiChatRuntimeState {
     this.contextVersion = AiChatSessionContext.currentVersion,
     this.toolsSpec,
     this.toolExecutor,
-    this.currentPadiChatOptions = const PadiChatOptions(
-      model: PadiChatOptions.defaultModel,
-      reasoningEffort: PadiChatOptions.defaultReasoningEffort,
-      supportsReasoning: true,
-    ),
   });
 
   final List<AiMessage> messages;
@@ -48,16 +42,6 @@ class AiChatRuntimeState {
   final int contextVersion;
   final AiChatToolsSpec? toolsSpec;
   final AiChatToolExecutorContract? toolExecutor;
-  final PadiChatOptions currentPadiChatOptions;
-
-  String get currentPadiModel => currentPadiChatOptions.model;
-
-  String get currentPadiReasoningEffort =>
-      currentPadiChatOptions.reasoningEffort;
-
-  bool get currentPadiSupportsReasoning =>
-      currentPadiChatOptions.supportsReasoning;
-
   List<AiMessage> get visibleMessages {
     if (messages.length <= visibleMessageCount) {
       return List<AiMessage>.unmodifiable(messages);
@@ -137,7 +121,6 @@ class AiChatRuntimeState {
     int? contextVersion,
     Object? toolsSpec = _runtimeStateSentinel,
     Object? toolExecutor = _runtimeStateSentinel,
-    PadiChatOptions? currentPadiChatOptions,
   }) {
     return AiChatRuntimeState(
       messages: messages ?? this.messages,
@@ -170,8 +153,6 @@ class AiChatRuntimeState {
       toolExecutor: identical(toolExecutor, _runtimeStateSentinel)
           ? this.toolExecutor
           : toolExecutor as AiChatToolExecutorContract?,
-      currentPadiChatOptions:
-          currentPadiChatOptions ?? this.currentPadiChatOptions,
     );
   }
 }

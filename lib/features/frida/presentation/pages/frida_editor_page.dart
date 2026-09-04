@@ -110,7 +110,9 @@ class FridaEditorPage extends HookConsumerWidget {
         onClick: (ctrl) {
           showLogcat.value = !showLogcat.value;
           if (showLogcat.value) {
-            ref.read(logcatProvider.notifier).start(packageName);
+            final console = ref.read(logcatProvider.notifier);
+            console.configureSession('frida', scriptName);
+            console.start(packageName);
           } else {
             ref.read(logcatProvider.notifier).stop();
             isLogcatFullscreen.value = false;
@@ -167,9 +169,11 @@ class FridaEditorPage extends HookConsumerWidget {
             onPressed: () async {
               await _saveScript(ref, controller.text);
               // 启动 logcat 监听
-              ref.read(logcatProvider.notifier).start(packageName);
+              final console = ref.read(logcatProvider.notifier);
+              console.configureSession('frida', scriptName);
+              await console.start(packageName);
               // 保存后重新注入，实现热更新（异步执行，不阻塞 UI）
-              ref.read(
+              await ref.read(
                 bundleFridaHookJsProvider(packageName: packageName).future,
               );
               if (!context.mounted) return;
@@ -182,15 +186,14 @@ class FridaEditorPage extends HookConsumerWidget {
             onPressed: () {
               Future.microtask(() async {
                 await _saveScript(ref, controller.text);
-                ref.read(logcatProvider.notifier).start(packageName);
-                // 先启动 App
-                AppNative().openAppX(packageName);
-                // 等待一下让 App 启动
-                await Future.delayed(const Duration(milliseconds: 500));
-                // 再注入脚本
-                ref.read(
+                await ref.read(
                   bundleFridaHookJsProvider(packageName: packageName).future,
                 );
+                final console = ref.read(logcatProvider.notifier);
+                console.configureSession('frida', scriptName);
+                await console.start(packageName);
+                // The generated hook must exist before the target process starts.
+                await AppNative().openAppX(packageName);
               });
             },
           ),

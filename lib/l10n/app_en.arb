@@ -607,15 +607,6 @@
   "aiBuyCardSecret": "Buy Access Code",
   "aiApiKeyConfigured": "API Key configured",
   "aiApiKeyNotConfigured": "API Key not configured",
-  "aiPadiModelLabel": "Model",
-  "aiPadiReasoningLabel": "Thinking",
-  "aiPadiEffortNone": "Minimal",
-  "aiPadiEffortLow": "Low",
-  "aiPadiEffortMedium": "Medium",
-  "aiPadiEffortHigh": "High",
-  "aiPadiEffortXHigh": "Extreme",
-  "aiPadiOptionsExpand": "Expand",
-  "aiPadiOptionsCollapse": "Collapse",
   "aiCurrentStatus": "Status: {status}",
   "@aiCurrentStatus": {
     "placeholders": {

@@ -374,7 +374,8 @@ class _AiOverlayViewport extends HookConsumerWidget {
         collapsedOffset;
     final showExpandedPanel = expansionProgress > 0.02;
     final collapsedBallOpacity =
-        1.0 - Curves.easeIn.transform((expansionProgress / 0.4).clamp(0.0, 1.0));
+        1.0 -
+        Curves.easeIn.transform((expansionProgress / 0.4).clamp(0.0, 1.0));
     final shouldBuildPanelContent = expansionProgress > 0.9;
     final panelContentOpacity = Curves.easeOutCubic.transform(
       ((expansionProgress - 0.9) / 0.1).clamp(0.0, 1.0),
@@ -561,7 +562,9 @@ class _AiOverlayViewport extends HookConsumerWidget {
                         border: showExpandedPanel
                             ? Border.all(
                                 color: context.colorScheme.outlineVariant
-                                    .withValues(alpha: 0.34 * expansionProgress),
+                                    .withValues(
+                                      alpha: 0.34 * expansionProgress,
+                                    ),
                                 width: 1,
                               )
                             : null,
@@ -598,7 +601,9 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                   ),
                                                 )
                                               : ColoredBox(
-                                                  color: context.colorScheme.surface
+                                                  color: context
+                                                      .colorScheme
+                                                      .surface
                                                       .withValues(alpha: 0.04),
                                                 ),
                                         ),
@@ -607,7 +612,8 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                           top: 0,
                                           right: 0,
                                           child: GestureDetector(
-                                            behavior: HitTestBehavior.translucent,
+                                            behavior:
+                                                HitTestBehavior.translucent,
                                             onPanStart: showPanelInteractions
                                                 ? (details) => startDragging(
                                                     details.globalPosition,
@@ -638,7 +644,9 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                     color: context
                                                         .colorScheme
                                                         .surface
-                                                        .withValues(alpha: 0.28),
+                                                        .withValues(
+                                                          alpha: 0.28,
+                                                        ),
                                                     borderRadius:
                                                         BorderRadius.circular(
                                                           12.0 * contentScale,
@@ -646,18 +654,16 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                     child: InkWell(
                                                       borderRadius:
                                                           BorderRadius.circular(
-                                                            12.0 *
-                                                                contentScale,
+                                                            12.0 * contentScale,
                                                           ),
                                                       onTap: () {
                                                         overlayStateNotifier
                                                             .setExpanded(false);
                                                       },
                                                       child: Padding(
-                                                        padding:
-                                                            EdgeInsets.all(
-                                                              headerClosePadding,
-                                                            ),
+                                                        padding: EdgeInsets.all(
+                                                          headerClosePadding,
+                                                        ),
                                                         child: Icon(
                                                           Icons.remove_rounded,
                                                           size:
@@ -674,23 +680,21 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                   ),
                                                   SizedBox(width: headerGap),
                                                   Expanded(
-                                                    child:
-                                                        _AiOverlayHeaderIdentity(
-                                                          displayTitle:
-                                                              displayTitle,
-                                                          displaySubtitle:
-                                                              displaySubtitle,
-                                                          contentScale:
-                                                              contentScale,
-                                                          isCompact:
-                                                              isCompactPanel,
-                                                          titleFontSize:
-                                                              headerTitleFontSize,
-                                                          subtitleFontSize:
-                                                              headerSubtitleFontSize,
-                                                          subtitleGap:
-                                                              headerSubtitleGap,
-                                                        ),
+                                                    child: _AiOverlayHeaderIdentity(
+                                                      displayTitle:
+                                                          displayTitle,
+                                                      displaySubtitle:
+                                                          displaySubtitle,
+                                                      contentScale:
+                                                          contentScale,
+                                                      isCompact: isCompactPanel,
+                                                      titleFontSize:
+                                                          headerTitleFontSize,
+                                                      subtitleFontSize:
+                                                          headerSubtitleFontSize,
+                                                      subtitleGap:
+                                                          headerSubtitleGap,
+                                                    ),
                                                   ),
                                                   SizedBox(width: headerGap),
                                                   _AiOverlaySessionActions(
@@ -702,7 +706,8 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                     contentScale: contentScale,
                                                     onCreateSession: () {
                                                       isCreateSessionDialogOpen
-                                                          .value = true;
+                                                              .value =
+                                                          true;
                                                     },
                                                     onDeleteCurrentSession:
                                                         currentSession == null
@@ -710,41 +715,41 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                         : () async {
                                                             final shouldDelete =
                                                                 await showDialog<
-                                                                      bool
-                                                                    >(
+                                                                  bool
+                                                                >(
                                                                   context:
                                                                       context,
                                                                   builder:
-                                                                      (dialogContext) => AlertDialog(
+                                                                      (
+                                                                        dialogContext,
+                                                                      ) => AlertDialog(
                                                                         title: Text(
                                                                           context
                                                                               .l10n
                                                                               .aiDeleteConfirmTitle,
                                                                         ),
-                                                                        content:
-                                                                            Text(
-                                                                              currentSession.name,
-                                                                            ),
+                                                                        content: Text(
+                                                                          currentSession
+                                                                              .name,
+                                                                        ),
                                                                         actions: [
                                                                           TextButton(
                                                                             onPressed: () => Navigator.pop(
                                                                               dialogContext,
                                                                               false,
                                                                             ),
-                                                                            child:
-                                                                                Text(
-                                                                                  context.l10n.cancel,
-                                                                                ),
+                                                                            child: Text(
+                                                                              context.l10n.cancel,
+                                                                            ),
                                                                           ),
                                                                           TextButton(
                                                                             onPressed: () => Navigator.pop(
                                                                               dialogContext,
                                                                               true,
                                                                             ),
-                                                                            child:
-                                                                                Text(
-                                                                                  context.l10n.delete,
-                                                                                ),
+                                                                            child: Text(
+                                                                              context.l10n.delete,
+                                                                            ),
                                                                           ),
                                                                         ],
                                                                       ),
@@ -869,12 +874,13 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                         ),
                                                   ),
                                                 ),
-                                                if (selectionTags.isNotEmpty) ...[
+                                                if (selectionTags
+                                                    .isNotEmpty) ...[
                                                   SizedBox(
                                                     height:
                                                         (isCompactPanel
-                                                                ? 4.0
-                                                                : 6.0) *
+                                                            ? 4.0
+                                                            : 6.0) *
                                                         contentScale,
                                                   ),
                                                   MemoryAiSelectionTagBar(
@@ -885,8 +891,8 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                   SizedBox(
                                                     height:
                                                         (isCompactPanel
-                                                                ? 4.0
-                                                                : 6.0) *
+                                                            ? 4.0
+                                                            : 6.0) *
                                                         contentScale,
                                                   ),
                                                 ],
@@ -896,8 +902,6 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                   showQuickActions: false,
                                                   isEmbedded: true,
                                                   isCompact: isCompactPanel,
-                                                  showBuiltinOptions: true,
-                                                  builtinOptionsCompact: true,
                                                   onRetryInitialization:
                                                       initializeOverlayChat,
                                                   hasComposedContent:
@@ -915,7 +919,8 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                           right: 2,
                                           bottom: 2,
                                           child: GestureDetector(
-                                            behavior: HitTestBehavior.translucent,
+                                            behavior:
+                                                HitTestBehavior.translucent,
                                             onPanStart: showPanelInteractions
                                                 ? (details) {
                                                     isResizing.value = true;

@@ -110,7 +110,9 @@ class XposedEditorPage extends HookConsumerWidget {
         onClick: (CodeLineEditingController ctrl) {
           showLogcat.value = !showLogcat.value;
           if (showLogcat.value) {
-            ref.read(logcatProvider.notifier).start(packageName);
+            final console = ref.read(logcatProvider.notifier);
+            console.configureSession('xposed', scriptName);
+            console.start(packageName);
           } else {
             ref.read(logcatProvider.notifier).stop();
             isLogcatFullscreen.value = false;
@@ -180,7 +182,9 @@ class XposedEditorPage extends HookConsumerWidget {
                   localPath: path,
                 ).future,
               );
-              ref.read(logcatProvider.notifier).start(packageName);
+              final console = ref.read(logcatProvider.notifier);
+              console.configureSession('xposed', scriptName);
+              await console.start(packageName);
             },
           ),
         ],

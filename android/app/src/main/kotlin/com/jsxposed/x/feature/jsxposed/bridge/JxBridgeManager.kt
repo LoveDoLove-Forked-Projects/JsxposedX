@@ -13,18 +13,20 @@ class JxBridgeManager(
     private val dispatcher: JxSingleThreadDispatcher,
 ) {
 
-    private val hookBridge = JxHookBridge(qjs, classLoader, dispatcher)
+    private val logBridge = JxLogBridge(qjs)
+    private val hookBridge = JxHookBridge(qjs, classLoader, dispatcher, logBridge)
     private val classBridge = JxClassBridge(qjs, classLoader)
     private val fieldBridge = JxFieldBridge(qjs, classLoader)
     private val methodBridge = JxMethodBridge(qjs, classLoader)
-    private val logBridge = JxLogBridge(qjs)
 
     fun beginScriptScope(scriptKey: String) {
         hookBridge.beginScriptScope(scriptKey)
+        logBridge.beginScriptScope(scriptKey)
     }
 
     fun endScriptScope() {
         hookBridge.endScriptScope()
+        logBridge.endScriptScope()
     }
 
     fun unhookScript(scriptKey: String): Int {

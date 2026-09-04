@@ -4,8 +4,10 @@ import 'package:JsxposedX/core/models/ai_config.dart';
 const String builtinAiConfigId = 'builtin_closeai_default';
 const String builtinAiConfigName = '沐雪接口';
 const String builtinAiConfigBaseUrl = 'https://muxueai.pro';
-const String builtinLegacyBuiltinAiConfigId = 'builtin_closeai_kimi_k25';
-const String builtinKimiAiConfigId = builtinLegacyBuiltinAiConfigId;
+
+// IDs retired from the built-in catalog. They remain recognized only during
+// migration so an old selection cannot reappear as a custom configuration.
+const Set<String> retiredBuiltinAiConfigIds = {'builtin_closeai_kimi_k25'};
 
 class BuiltinAiConfigSpec {
   const BuiltinAiConfigSpec({
@@ -21,7 +23,6 @@ class BuiltinAiConfigSpec {
     required this.statusLabel,
     required this.badgeLabels,
     this.purchaseUrl,
-    this.supportsPadiOptions = false,
   });
 
   final String id;
@@ -36,7 +37,6 @@ class BuiltinAiConfigSpec {
   final String statusLabel;
   final List<String> badgeLabels;
   final String? purchaseUrl;
-  final bool supportsPadiOptions;
 
   AiConfig toConfig({String apiKey = ''}) {
     return AiConfig(
@@ -65,23 +65,8 @@ const List<BuiltinAiConfigSpec> builtinAiConfigSpecs = [
     apiType: AiApiType.openai,
     apiKeyStorageKey: 'ai_builtin_api_key',
     statusLabel: 'GPT-MAX',
-    badgeLabels: ['Evil','Claude','ChatGPT','国产'],
+    badgeLabels: ['Evil', 'Claude', 'ChatGPT', '国产'],
     purchaseUrl: 'https://shop.zmfaka.cn/shop/SQGJ7S7P',
-    supportsPadiOptions: true,
-  ),
-  BuiltinAiConfigSpec(
-    id: builtinKimiAiConfigId,
-    name: '帕帝无道德接口',
-    apiUrl: 'https://kimi.closeai.hk/v1',
-    moduleName: 'Pro/moonshotai/Kimi-K2.5',
-    maxToken: 4096,
-    temperature: 1.0,
-    memoryRounds: 6,
-    apiType: AiApiType.openai,
-    apiKeyStorageKey: 'ai_builtin_api_key_builtin_closeai_kimi_k25',
-    statusLabel: 'Evil',
-    badgeLabels: ['Evil'],
-    purchaseUrl: 'https://shop.zmfaka.cn/shop/5W176EN1',
   ),
 ];
 
@@ -118,8 +103,7 @@ String builtinApiKeyStorageKeyForId(String id) {
 
 bool isBuiltinAiConfigId(String id) => getBuiltinAiConfigSpecById(id) != null;
 
-bool isBuiltinAiConfig(AiConfig config) => isBuiltinAiConfigId(config.id);
+bool isRetiredBuiltinAiConfigId(String id) =>
+    retiredBuiltinAiConfigIds.contains(id);
 
-bool shouldUseBuiltinPadiOptions(AiConfig config) {
-  return getBuiltinAiConfigSpecById(config.id)?.supportsPadiOptions ?? false;
-}
+bool isBuiltinAiConfig(AiConfig config) => isBuiltinAiConfigId(config.id);

@@ -3,16 +3,13 @@ import 'package:JsxposedX/common/widgets/app_bottom_sheet.dart';
 import 'dart:developer' as developer;
 import 'package:JsxposedX/core/extensions/context_extensions.dart';
 import 'package:JsxposedX/core/utils/file_picker_util.dart';
-import 'package:JsxposedX/features/ai/domain/constants/builtin_ai_config.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_session_context.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_session_init_state.dart';
 import 'package:JsxposedX/features/ai/domain/services/ai_multimodal_message_codec.dart';
-import 'package:JsxposedX/features/ai/presentation/providers/config/ai_config_query_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/runtime/ai_chat_runtime_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_runtime_state.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_compact_scope.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_quick_actions.dart';
-import 'package:JsxposedX/features/ai/presentation/widgets/padi_chat_options_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -30,8 +27,6 @@ class AiChatInput extends HookConsumerWidget {
   final bool showQuickActions;
   final bool isEmbedded;
   final bool isCompact;
-  final bool showBuiltinOptions;
-  final bool builtinOptionsCompact;
   final Future<void> Function()? onRetryInitialization;
   final VoidCallback? onOpenAnalysis;
   final String Function(String rawText)? composeOutgoingText;
@@ -46,8 +41,6 @@ class AiChatInput extends HookConsumerWidget {
     this.showQuickActions = true,
     this.isEmbedded = false,
     this.isCompact = false,
-    this.showBuiltinOptions = true,
-    this.builtinOptionsCompact = false,
     this.onRetryInitialization,
     this.onOpenAnalysis,
     this.composeOutgoingText,
@@ -70,7 +63,6 @@ class AiChatInput extends HookConsumerWidget {
     final chatState = ref.watch(
       aiChatRuntimeProvider(packageName: packageName),
     );
-    final aiConfigAsync = ref.watch(aiConfigProvider);
 
     final textValue = useValueListenable(textController);
     final hasContent = textValue.text.trim().isNotEmpty;
@@ -267,16 +259,6 @@ class AiChatInput extends HookConsumerWidget {
             packageName: packageName,
             systemPrompt: systemPrompt,
             onOpenAnalysis: onOpenAnalysis,
-          ),
-        if (showBuiltinOptions &&
-            aiConfigAsync.value != null &&
-            shouldUseBuiltinPadiOptions(aiConfigAsync.value!))
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16 * scopeScale),
-            child: PadiChatOptionsBar(
-              packageName: packageName,
-              isCompact: builtinOptionsCompact,
-            ),
           ),
         Container(
           padding: isEmbedded
