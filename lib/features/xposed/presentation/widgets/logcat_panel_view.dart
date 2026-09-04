@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:JsxposedX/core/extensions/context_extensions.dart';
 import 'package:JsxposedX/features/xposed/presentation/providers/logcat_provider.dart';
 import 'package:flutter/material.dart';
@@ -33,13 +35,19 @@ class LogcatPanelView extends HookConsumerWidget {
     final searchQuery = logcatNotifier.searchQuery;
     final scrollController = useScrollController();
     final selectedTag = useState<String?>(null);
+    final searchDebounce = useRef<Timer?>(null);
+
+    useEffect(() {
+      return () => searchDebounce.value?.cancel();
+    }, const []);
 
     // 使用 useMemoized 缓存过滤结果，避免每次都重新计算
     final filteredEntries = useMemoized(() {
+      final normalizedQuery = searchQuery.toLowerCase();
       return logEntries.where((entry) {
         // Text search filter (from provider search query)
-        if (searchQuery.isNotEmpty &&
-            !entry.rawLine.toLowerCase().contains(searchQuery.toLowerCase())) {
+        if (normalizedQuery.isNotEmpty &&
+            !entry.rawLine.toLowerCase().contains(normalizedQuery)) {
           return false;
         }
         // Tag quick filter (local UI state)
@@ -58,9 +66,13 @@ class LogcatPanelView extends HookConsumerWidget {
       }).toList();
     }, [logEntries, searchQuery, selectedTag.value]);
 
+    final scrollScheduled = useRef(false);
     ref.listen(logcatProvider, (previous, next) {
       if (logcatNotifier.isAutoScroll && scrollController.hasClients) {
-        Future.delayed(const Duration(milliseconds: 50), () {
+        if (scrollScheduled.value) return;
+        scrollScheduled.value = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          scrollScheduled.value = false;
           if (scrollController.hasClients) {
             scrollController.jumpTo(scrollController.position.maxScrollExtent);
           }
@@ -87,7 +99,13 @@ class LogcatPanelView extends HookConsumerWidget {
             filteredCount: filteredEntries.length,
             totalCount: logEntries.length,
             isFullscreen: isFullscreen,
-            onSearchChanged: logcatNotifier.setSearchQuery,
+            onSearchChanged: (query) {
+              searchDebounce.value?.cancel();
+              searchDebounce.value = Timer(
+                const Duration(milliseconds: 200),
+                () => logcatNotifier.setSearchQuery(query),
+              );
+            },
             onAutoScrollToggle: () =>
                 logcatNotifier.setAutoScroll(!autoScroll),
             onClear: logcatNotifier.clear,

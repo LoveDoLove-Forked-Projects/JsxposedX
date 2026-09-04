@@ -345,7 +345,6 @@ class _StreamingAiChatBubble extends HookWidget {
   @override
   Widget build(BuildContext context) {
     final content = useState('');
-    final lastUpdateTime = useState<DateTime?>(null);
     final isThinking = useState(false);
 
     useEffect(() {
@@ -354,15 +353,8 @@ class _StreamingAiChatBubble extends HookWidget {
           return;
         }
 
-        final now = DateTime.now();
-        final lastUpdate = lastUpdateTime.value;
-        if (data.isEmpty ||
-            lastUpdate == null ||
-            now.difference(lastUpdate).inMilliseconds >= 50) {
-          lastUpdateTime.value = now;
-          if (data != content.value) {
-            content.value = data;
-          }
+        if (data != content.value) {
+          content.value = data;
         }
       });
 

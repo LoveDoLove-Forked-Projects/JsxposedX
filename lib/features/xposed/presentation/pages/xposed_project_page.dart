@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:JsxposedX/common/pages/toast.dart';
 import 'package:JsxposedX/common/widgets/app_bottom_sheet.dart';
 import 'package:JsxposedX/common/widgets/custom_dIalog.dart';
 import 'package:JsxposedX/common/widgets/loading.dart';
@@ -9,7 +8,6 @@ import 'package:JsxposedX/core/extensions/context_extensions.dart';
 import 'package:JsxposedX/core/routes/routes/home_route.dart';
 import 'package:JsxposedX/core/utils/file_picker_util.dart';
 import 'package:JsxposedX/core/utils/path_utils.dart';
-import 'package:JsxposedX/features/app/presentation/providers/app_query_provider.dart';
 import 'package:JsxposedX/features/xposed/presentation/providers/xposed_action_provider.dart';
 import 'package:JsxposedX/features/xposed/presentation/providers/xposed_query_provider.dart';
 import 'package:JsxposedX/features/xposed/presentation/widgets/create_xposed_project_dialog.dart';
@@ -141,76 +139,11 @@ class XposedProjectPage extends HookConsumerWidget {
               return ListView.separated(
                 physics: const AlwaysScrollableScrollPhysics(),
                 itemBuilder: (context, index) {
-                  final statusAsync = ref.watch(
-                    getJsScriptStatusProvider(
-                      packageName: packageName,
-                      localPath: scripts[index],
-                    ),
-                  );
-                  return statusAsync.when(
-                    data: (status) {
-                      return XposedScriptItem(
-                        onClick: () {
-                          final scriptPath = scripts[index];
-                          final name = PathUtils.getName(path: scriptPath);
-                          final isVisual = PathUtils.getType(name) == 'visual';
-                          final route = isVisual
-                              ? HomeRoute.toXposedVisualEditor(
-                                  packageName: packageName,
-                                )
-                              : HomeRoute.toXposedEditor(
-                                  packageName: packageName,
-                                );
-                          context.push(route, extra: scriptPath);
-                        },
-                        onLongClick: () {
-                          CustomDialog.show(
-                            title: Text(context.l10n.confirmDelete),
-                            child: const SizedBox(),
-                            actionButtons: [
-                              ElevatedButton(
-                                onPressed: () async {
-                                  await ref.read(
-                                    deleteJsScriptProvider(
-                                      packageName: packageName,
-                                      localPath: scripts[index],
-                                    ).future,
-                                  );
-                                  ref.invalidate(
-                                    jsScriptsProvider(packageName: packageName),
-                                  );
-                                  SmartDialog.dismiss();
-                                },
-                                child: Text(context.l10n.confirm),
-                              ),
-                              ElevatedButton(
-                                onPressed: () => SmartDialog.dismiss(),
-                                child: Text(context.l10n.cancel),
-                              ),
-                            ],
-                          );
-                        },
-                        path: scripts[index],
-                        enabled: status,
-                        onToggle: (enabled) async {
-                          await ref.read(
-                            setJsScriptStatusProvider(
-                              packageName: packageName,
-                              localPath: scripts[index],
-                              status: enabled,
-                            ).future,
-                          );
-                          ref.invalidate(
-                            getJsScriptStatusProvider(
-                              packageName: packageName,
-                              localPath: scripts[index],
-                            ),
-                          );
-                        },
-                      );
-                    },
-                    error: (error, stack) => Text(error.toString()),
-                    loading: () => const Loading(),
+                  final scriptPath = scripts[index];
+                  return _XposedScriptRow(
+                    key: ValueKey(scriptPath),
+                    packageName: packageName,
+                    scriptPath: scriptPath,
                   );
                 },
                 separatorBuilder: (context, index) => SizedBox(height: 3.h),
@@ -233,6 +166,85 @@ class XposedProjectPage extends HookConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _XposedScriptRow extends ConsumerWidget {
+  const _XposedScriptRow({
+    super.key,
+    required this.packageName,
+    required this.scriptPath,
+  });
+
+  final String packageName;
+  final String scriptPath;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statusAsync = ref.watch(
+      getJsScriptStatusProvider(
+        packageName: packageName,
+        localPath: scriptPath,
+      ),
+    );
+    return statusAsync.when(
+      data: (status) => XposedScriptItem(
+        onClick: () {
+          final name = PathUtils.getName(path: scriptPath);
+          final isVisual = PathUtils.getType(name) == 'visual';
+          final route = isVisual
+              ? HomeRoute.toXposedVisualEditor(packageName: packageName)
+              : HomeRoute.toXposedEditor(packageName: packageName);
+          context.push(route, extra: scriptPath);
+        },
+        onLongClick: () {
+          CustomDialog.show(
+            title: Text(context.l10n.confirmDelete),
+            child: const SizedBox(),
+            actionButtons: [
+              ElevatedButton(
+                onPressed: () async {
+                  await ref.read(
+                    deleteJsScriptProvider(
+                      packageName: packageName,
+                      localPath: scriptPath,
+                    ).future,
+                  );
+                  ref.invalidate(
+                    jsScriptsProvider(packageName: packageName),
+                  );
+                  SmartDialog.dismiss();
+                },
+                child: Text(context.l10n.confirm),
+              ),
+              ElevatedButton(
+                onPressed: () => SmartDialog.dismiss(),
+                child: Text(context.l10n.cancel),
+              ),
+            ],
+          );
+        },
+        path: scriptPath,
+        enabled: status,
+        onToggle: (enabled) async {
+          await ref.read(
+            setJsScriptStatusProvider(
+              packageName: packageName,
+              localPath: scriptPath,
+              status: enabled,
+            ).future,
+          );
+          ref.invalidate(
+            getJsScriptStatusProvider(
+              packageName: packageName,
+              localPath: scriptPath,
+            ),
+          );
+        },
+      ),
+      error: (error, _) => Text(error.toString()),
+      loading: () => const Loading(),
     );
   }
 }
