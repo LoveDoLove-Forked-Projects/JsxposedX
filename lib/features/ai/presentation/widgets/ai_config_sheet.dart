@@ -1373,28 +1373,6 @@ class AIConfigSheet extends HookConsumerWidget {
                                       )
                                       .testConnection(resolvedConfig);
 
-                                  final existsInList = configList.any(
-                                    (item) => item.id == resolvedConfig.id,
-                                  );
-                                  if (isNewMode.value || !existsInList) {
-                                    await ref
-                                        .read(aiConfigActionProvider.notifier)
-                                        .addConfig(resolvedConfig);
-                                  } else {
-                                    await ref
-                                        .read(aiConfigActionProvider.notifier)
-                                        .updateConfig(resolvedConfig);
-                                  }
-
-                                  await ref
-                                      .read(aiConfigActionProvider.notifier)
-                                      .save(resolvedConfig);
-                                  await ref
-                                      .read(aiConfigActionProvider.notifier)
-                                      .saveDiscoveredModelsMetadata(
-                                        configId: resolvedConfig.id,
-                                        models: availableModels.value,
-                                      );
                                   final systemPrompt =
                                       values['assistant_system_prompt']
                                           ?.toString();
@@ -1429,15 +1407,21 @@ class AIConfigSheet extends HookConsumerWidget {
                                             '',
                                       ) ??
                                       8;
+                                  final existsInList = configList.any(
+                                    (item) => item.id == resolvedConfig.id,
+                                  );
                                   await ref
                                       .read(aiConfigActionProvider.notifier)
-                                      .saveAssistantSettings(
-                                        configId: resolvedConfig.id,
+                                      .saveConfiguration(
+                                        config: resolvedConfig,
+                                        models: availableModels.value,
                                         systemPrompt: systemPrompt,
                                         contextMode: contextMode,
                                         recentMessageLimit: recentMessageLimit,
                                         approvalMode: approvalMode,
                                         maxToolRounds: maxToolRounds,
+                                        addToList:
+                                            isNewMode.value || !existsInList,
                                       );
 
                                   ref.invalidate(aiChatRuntimeStatusProvider);

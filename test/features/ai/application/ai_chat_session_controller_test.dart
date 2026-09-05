@@ -149,6 +149,32 @@ void main() {
     await controller.close();
   });
 
+  test('persists edited user content before regenerating', () async {
+    final transport = _TextTransport(['first answer', 'edited answer']);
+    final controller = _controller(catalog, conversations, transport);
+    await controller.initialize();
+    await controller.sendText('original question');
+
+    final userMessageId = controller.state.messages.first.id;
+    await controller.editUserMessageAndResend(
+      messageId: userMessageId,
+      updatedText: 'edited question',
+    );
+
+    final stored = await conversations.getMessages('conversation');
+    expect(stored, hasLength(2));
+    expect(stored.first.id, userMessageId);
+    expect(
+      stored.first.parts.whereType<AiTextPart>().single.text,
+      'edited question',
+    );
+    expect(
+      stored.last.parts.whereType<AiTextPart>().single.text,
+      'edited answer',
+    );
+    await controller.close();
+  });
+
   test('executes reverse tools and returns results to the model', () async {
     final transport = _ScriptedToolTransport();
     const executor = _FakeToolExecutor();
@@ -196,6 +222,43 @@ void main() {
     await controller.regenerateLastResponse();
     expect(transport.requests, hasLength(3));
     expect(await conversations.getMessages('conversation'), hasLength(2));
+    await controller.close();
+  });
+
+  test('persists a failed tool result when the executor throws', () async {
+    final transport = _ScriptedToolTransport();
+    final controller = _controller(
+      catalog,
+      conversations,
+      transport,
+      environment: const AiChatSessionEnvironment(
+        id: 'apk_reverse',
+        scopeId: 'com.example.app',
+        version: 'v2',
+        systemPrompt: '',
+        tools: [
+          AiToolSpec(
+            name: 'get_manifest',
+            description: 'Read manifest',
+            inputSchema: {'type': 'object'},
+          ),
+        ],
+        toolExecutor: _ThrowingToolExecutor(),
+      ),
+    );
+
+    await controller.initialize();
+    await controller.sendText('analyze');
+
+    final stored = await conversations.getMessages('conversation');
+    final result = stored
+        .expand((message) => message.parts)
+        .whereType<AiToolResultPart>()
+        .single
+        .toolResult;
+    expect(result.success, isFalse);
+    expect(result.content, contains('boom'));
+    expect(controller.state.phase, AiChatSessionPhase.ready);
     await controller.close();
   });
 }
@@ -381,6 +444,36 @@ class _ScriptedToolTransport implements AiTransport {
   }
 }
 
+class _TextTransport implements AiTransport {
+  _TextTransport(this.responses);
+
+  final List<String> responses;
+  var _index = 0;
+
+  @override
+  Future<AiTransportResponse> send(
+    PreparedAiRequest request, {
+    required AiCancellationToken cancellation,
+  }) async {
+    final text = responses[_index++];
+    final event = {
+      'choices': [
+        {
+          'delta': {'content': text},
+          'finish_reason': 'stop',
+        },
+      ],
+    };
+    return AiTransportResponse(
+      statusCode: 200,
+      headers: const {},
+      body: Stream.value(
+        utf8.encode('data: ${jsonEncode(event)}\n\ndata: [DONE]\n\n'),
+      ),
+    );
+  }
+}
+
 class _FakeToolExecutor implements AiToolExecutor {
   const _FakeToolExecutor();
 
@@ -395,6 +488,18 @@ class _FakeToolExecutor implements AiToolExecutor {
       success: true,
       content: 'manifest-data',
     );
+  }
+}
+
+class _ThrowingToolExecutor implements AiToolExecutor {
+  const _ThrowingToolExecutor();
+
+  @override
+  Future<AiToolResult> execute(
+    AiToolCall call, {
+    AiToolProgress? onProgress,
+  }) async {
+    throw StateError('boom');
   }
 }
 

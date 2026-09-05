@@ -37,41 +37,22 @@ class AiChatOrchestrator {
   Future<void> _execute(AiRequest request, AiChatRun run) async {
     try {
       _validate(request);
-      var effectiveRequest = request;
-      var provider = _providerRegistry.require(
-        effectiveRequest.connection.providerId,
-      );
-      var adapter = _adapterRegistry.require(provider.adapterId);
+      final provider = _providerRegistry.require(request.connection.providerId);
+      final adapter = _adapterRegistry.require(provider.adapterId);
       final apiKey = await _resolveCredential(request, provider);
       if (run.isCancelled) {
         _fail(run, AiFailureCode.cancelled);
         return;
       }
 
-      var prepared = adapter.prepare(
-        effectiveRequest,
+      final prepared = adapter.prepare(
+        request,
         context: AiAdapterContext(provider: provider, apiKey: apiKey),
       );
       var response = await _transport.send(
         prepared,
         cancellation: run._cancellation,
       );
-      if (_shouldFallbackToChat(effectiveRequest, response.statusCode)) {
-        await _readAtMost(response.body, 64 * 1024);
-        effectiveRequest = _chatFallbackRequest(effectiveRequest);
-        provider = _providerRegistry.require(
-          effectiveRequest.connection.providerId,
-        );
-        adapter = _adapterRegistry.require(provider.adapterId);
-        prepared = adapter.prepare(
-          effectiveRequest,
-          context: AiAdapterContext(provider: provider, apiKey: apiKey),
-        );
-        response = await _transport.send(
-          prepared,
-          cancellation: run._cancellation,
-        );
-      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final errorBody = await _readAtMost(response.body, 64 * 1024);
         run._accumulator.add(
@@ -140,54 +121,9 @@ class AiChatOrchestrator {
       return adapter.decodeStream(body, requestId: request.requestId);
     }
 
-    // Some gateways return SSE while incorrectly advertising JSON. Buffering
-    // is limited to this mislabelled/JSON branch; correctly labelled SSE stays
-    // fully incremental above. Inspect the payload before choosing a decoder.
-    final bytes = await _readAll(body);
-    if (!_looksLikeJson(bytes)) {
-      return adapter.decodeStream(
-        Stream<List<int>>.value(bytes),
-        requestId: request.requestId,
-      );
-    }
-    return adapter.decodeResponse(bytes, requestId: request.requestId);
-  }
-
-  static bool _looksLikeJson(List<int> bytes) {
-    for (final byte in bytes) {
-      // UTF-8 whitespace: space, tab, CR and LF.
-      if (byte == 0x20 || byte == 0x09 || byte == 0x0a || byte == 0x0d) {
-        continue;
-      }
-      return byte == 0x7b || byte == 0x5b; // '{' or '['
-    }
-    return false;
-  }
-
-  static bool _shouldFallbackToChat(AiRequest request, int statusCode) {
-    return request.connection.providerId == 'openai-responses' &&
-        (statusCode == 404 || statusCode == 405);
-  }
-
-  static AiRequest _chatFallbackRequest(AiRequest request) {
-    final endpoints = Map<AiEndpointKind, Uri>.from(
-      request.connection.endpointOverrides,
-    );
-    final responsesEndpoint = endpoints.remove(AiEndpointKind.responses);
-    if (responsesEndpoint != null) {
-      final path = responsesEndpoint.path.replaceFirst(
-        RegExp(r'/responses/?$'),
-        '/chat/completions',
-      );
-      endpoints[AiEndpointKind.chatCompletions] = responsesEndpoint.replace(
-        path: path,
-      );
-    }
-    return request.copyWith(
-      connection: request.connection.copyWith(
-        providerId: 'openai',
-        endpointOverrides: endpoints,
-      ),
+    return adapter.decodeResponse(
+      await _readAll(body),
+      requestId: request.requestId,
     );
   }
 

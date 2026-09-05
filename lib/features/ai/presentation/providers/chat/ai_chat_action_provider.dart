@@ -6,44 +6,39 @@ import 'package:JsxposedX/core/models/ai_message.dart';
 import 'package:JsxposedX/core/models/ai_session.dart';
 import 'package:JsxposedX/core/networks/http_service.dart';
 import 'package:JsxposedX/core/providers/pinia_provider.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_controller.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_environment.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_state.dart';
 import 'package:JsxposedX/features/ai/data/datasources/chat/ai_chat_action_datasource.dart';
 import 'package:JsxposedX/features/ai/data/repositories/chat/ai_chat_action_repository_impl.dart';
 import 'package:JsxposedX/features/ai/domain/contracts/ai_chat_tool_executor_contract.dart';
-import 'package:JsxposedX/features/ai/domain/models/ai_chat_session_context.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_environment_snapshot.dart';
+import 'package:JsxposedX/features/ai/domain/models/ai_chat_session_context.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_response_issue.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_session_init_state.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_thinking_markup.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_tool_call.dart';
+import 'package:JsxposedX/features/ai/domain/repositories/ai_conversation_repository.dart';
 import 'package:JsxposedX/features/ai/domain/repositories/chat/ai_chat_action_repository.dart';
-import 'package:JsxposedX/features/ai/domain/services/ai_chat_context_assembler.dart';
 import 'package:JsxposedX/features/ai/domain/services/ai_multimodal_message_codec.dart';
+import 'package:JsxposedX/features/ai/infrastructure/migration/legacy_ai_conversation_migrator.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/chat/ai_chat_query_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/config/ai_config_query_provider.dart';
+import 'package:JsxposedX/features/ai/presentation/providers/system/ai_system_providers.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_action_state.dart';
-import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_controller.dart';
-import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_environment.dart';
-import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_state.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:uuid/uuid.dart';
+
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart'
     as standard;
 import 'package:JsxposedX/features/ai/domain/ports/ai_tool_executor.dart';
-import 'package:JsxposedX/features/ai/domain/repositories/ai_conversation_repository.dart';
-import 'package:JsxposedX/features/ai/infrastructure/migration/legacy_ai_conversation_migrator.dart';
-import 'package:JsxposedX/features/ai/presentation/providers/system/ai_system_providers.dart';
-import 'package:dio/dio.dart';
-import 'package:flutter/services.dart';
-import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:uuid/uuid.dart';
 
 part 'ai_chat_action_provider.g.dart';
 
 @Riverpod(keepAlive: true)
 Future<bool> aiStatus(Ref ref) async {
   final config = ref.watch(aiConfigProvider).value;
-  if (config == null || config.apiUrl.isEmpty) {
-    return false;
-  }
-
+  if (config == null || config.apiUrl.isEmpty) return false;
   try {
     await ref.read(aiChatActionRepositoryProvider).testConnection(config);
     return true;
@@ -54,86 +49,67 @@ Future<bool> aiStatus(Ref ref) async {
 
 @riverpod
 AiChatActionDatasource aiChatActionDatasource(Ref ref) {
-  final httpService = ref.watch(httpServiceProvider);
-  final storage = ref.watch(piniaStorageLocalProvider);
-  return AiChatActionDatasource(httpService: httpService, storage: storage);
+  return AiChatActionDatasource(
+    httpService: ref.watch(httpServiceProvider),
+    storage: ref.watch(piniaStorageLocalProvider),
+  );
 }
 
 @riverpod
 AiChatActionRepository aiChatActionRepository(Ref ref) {
-  final dataSource = ref.watch(aiChatActionDatasourceProvider);
-  return AiChatActionRepositoryImpl(dataSource: dataSource);
+  return AiChatActionRepositoryImpl(
+    dataSource: ref.watch(aiChatActionDatasourceProvider),
+  );
 }
 
 @riverpod
 class AiChatAction extends _$AiChatAction {
-  static const String _sessionSummaryPrefix = '[session_summary]';
-  static const int _contextHardBudgetChars = 16000;
-  static const int _contextTargetBudgetChars = 9000;
-  static const int _recentUserRoundsToKeep = 3;
-  static const int _defaultTransientRetryCount = 5;
-  static const Duration _transientRetryBaseDelay = Duration(milliseconds: 800);
-  static const Duration _transientRetryMaxDelay = Duration(seconds: 3);
-
-  bool _isDisposed = false;
-  bool _stopRequested = false;
   final StreamController<String> _streamingContentController =
       StreamController<String>.broadcast();
   final StreamController<bool> _streamingThinkingController =
       StreamController<bool>.broadcast();
-  StreamSubscription? _activeResponseSubscription;
-  Completer<_CollectedAssistantResponse>? _activeResponseCompleter;
-  CancelToken? _activeRequestCancelToken;
-  String _latestStreamingContent = '';
-  String _latestStreamingThinkingContent = '';
-  final AiChatContextAssembler _contextAssembler = AiChatContextAssembler();
   final Set<String> _migratedPackages = <String>{};
-  bool _standardPersistenceAvailable = false;
-  AiChatSessionController? _standardSessionController;
-  StreamSubscription<AiChatSessionState>? _standardSessionSubscription;
-  AiChatSessionEnvironment? _standardSessionEnvironment;
-  bool _standardSessionReady = false;
+
+  AiChatSessionController? _sessionController;
+  StreamSubscription<AiChatSessionState>? _sessionSubscription;
+  AiChatSessionEnvironment? _environment;
+  bool _sessionReady = false;
+  bool _disposed = false;
 
   Stream<String> get streamingContentStream =>
       _streamingContentController.stream;
+
   Stream<bool> get streamingThinkingStream =>
       _streamingThinkingController.stream;
 
   @override
   AiChatActionState build({required String packageName}) {
-    _isDisposed = false;
+    _disposed = false;
     ref.onDispose(() {
-      _isDisposed = true;
-      _activeRequestCancelToken?.cancel('provider_disposed');
-      _activeResponseSubscription?.cancel();
-      _standardSessionSubscription?.cancel();
-      _standardSessionController?.close();
-      _streamingContentController.close();
-      _streamingThinkingController.close();
+      _disposed = true;
+      unawaited(_sessionSubscription?.cancel());
+      unawaited(_sessionController?.close());
+      unawaited(_streamingContentController.close());
+      unawaited(_streamingThinkingController.close());
     });
     ref.listen(aiConfigProvider, (previous, next) {
-      final previousConfig = previous?.value;
-      final nextConfig = next.value;
-      if (_isDisposed || nextConfig == null) return;
-      if (previousConfig?.id == nextConfig.id &&
-          previousConfig?.moduleName == nextConfig.moduleName &&
-          previousConfig?.apiType == nextConfig.apiType &&
-          previousConfig?.apiUrl == nextConfig.apiUrl) {
+      final before = previous?.value;
+      final after = next.value;
+      if (_disposed || after == null) return;
+      if (before?.id == after.id &&
+          before?.moduleName == after.moduleName &&
+          before?.apiType == after.apiType &&
+          before?.apiUrl == after.apiUrl) {
         return;
       }
-      unawaited(_attachStandardSession());
+      unawaited(_attachSession());
     });
-    Future.microtask(() {
-      if (!_isDisposed) {
-        _initSessions();
-      }
-    });
+    Future.microtask(_initializeSessions);
     return const AiChatActionState();
   }
 
   void beginSessionInitialization() {
-    _clearStreamingContent();
-    _clearStreamingThinking();
+    _clearStreaming();
     state = state.copyWith(
       sessionInitState: AiSessionInitState.initializing,
       error: null,
@@ -144,7 +120,6 @@ class AiChatAction extends _$AiChatAction {
   }
 
   void markSessionReady() {
-    _clearStreamingThinking();
     state = state.copyWith(
       sessionInitState: AiSessionInitState.ready,
       error: null,
@@ -153,8 +128,7 @@ class AiChatAction extends _$AiChatAction {
   }
 
   void markSessionInitFailed(String message) {
-    _clearStreamingContent();
-    _clearStreamingThinking();
+    _clearStreaming();
     state = state.copyWith(
       sessionInitState: AiSessionInitState.failed,
       error: message,
@@ -165,20 +139,7 @@ class AiChatAction extends _$AiChatAction {
     );
   }
 
-  void setSystemPrompt(String prompt) {
-    state = state.copyWith(
-      systemPrompt: prompt,
-      sessionContext: state.sessionContext.copyWith(sessionRules: prompt),
-    );
-  }
-
-  @Deprecated('Use applyEnvironmentSnapshot instead.')
-  void setApkSession(String sessionId, List<String> dexPaths) {
-    // Environment-specific runtime state has moved out of the generic chat state.
-  }
-
   void applyEnvironmentSnapshot(AiChatEnvironmentSnapshot snapshot) {
-    _clearStreamingThinking();
     state = state.copyWith(
       systemPrompt: snapshot.systemPrompt,
       environmentVersion: snapshot.environmentVersion,
@@ -193,70 +154,164 @@ class AiChatAction extends _$AiChatAction {
         sessionRules: snapshot.systemPrompt,
       ),
     );
-    final previousEnvironment = _standardSessionEnvironment;
-    _standardSessionEnvironment = _buildStandardEnvironment(snapshot);
-    if (previousEnvironment?.version != snapshot.environmentVersion ||
-        previousEnvironment?.scopeId != snapshot.scopeId) {
-      unawaited(_attachStandardSession());
+    final previous = _environment;
+    _environment = _standardEnvironment(snapshot);
+    if (previous?.version != _environment?.version ||
+        previous?.scopeId != _environment?.scopeId) {
+      unawaited(_attachSession());
     }
   }
 
-  AiChatSessionEnvironment? _buildStandardEnvironment(
+  AiChatSessionEnvironment _standardEnvironment(
     AiChatEnvironmentSnapshot snapshot,
   ) {
-    final toolsSpec = snapshot.toolsSpec;
-    final executor = snapshot.toolExecutor;
-    final config = ref.read(aiConfigProvider).value;
-    final apiType = config?.apiType ?? AiApiType.openai;
+    final apiType =
+        ref.read(aiConfigProvider).value?.apiType ?? AiApiType.openai;
     final tools =
-        toolsSpec?.buildToolsJson(apiType: apiType) ??
+        snapshot.toolsSpec?.buildToolsJson(apiType: apiType) ??
         const <Map<String, dynamic>>[];
     return AiChatSessionEnvironment(
-      id: 'legacy-${snapshot.scopeId}',
+      id: 'reverse-${snapshot.scopeId}',
       scopeId: snapshot.scopeId,
       version: snapshot.environmentVersion,
       systemPrompt: snapshot.systemPrompt,
       tools: tools
           .map((raw) {
-            final function = raw['function'];
-            final map = function is Map
-                ? Map<String, dynamic>.from(function)
+            final rawFunction = raw['function'];
+            final function = rawFunction is Map
+                ? Map<String, dynamic>.from(rawFunction)
                 : Map<String, dynamic>.from(raw);
-            final parameters = map['parameters'] ?? map['input_schema'];
+            final rawParameters =
+                function['parameters'] ?? function['input_schema'];
             return standard.AiToolSpec(
-              name: map['name']?.toString() ?? '',
-              description: map['description']?.toString() ?? '',
-              inputSchema: parameters is Map
-                  ? Map<String, Object?>.from(parameters)
+              name: function['name']?.toString() ?? '',
+              description: function['description']?.toString() ?? '',
+              inputSchema: rawParameters is Map
+                  ? Map<String, Object?>.from(rawParameters)
                   : const <String, Object?>{},
             );
           })
           .where((tool) => tool.name.isNotEmpty)
           .toList(growable: false),
-      toolExecutor: executor == null
+      toolExecutor: snapshot.toolExecutor == null
           ? null
-          : _LegacyStandardToolExecutor(executor),
+          : _LegacyStandardToolExecutor(snapshot.toolExecutor!),
     );
   }
 
-  Future<void> _attachStandardSession() async {
-    final sessionId = state.currentSessionId;
-    final environment = _standardSessionEnvironment;
+  Future<void> _initializeSessions() async {
+    try {
+      final config = await ref.read(aiConfigProvider.future);
+      await _migrateLegacySessions(config);
+      final sessions = await getSessionsAsync();
+      if (_disposed || sessions.isEmpty) return;
+      final lastActive = await ref
+          .read(aiChatQueryRepositoryProvider)
+          .getLastActiveSessionId(packageName);
+      if (_disposed) return;
+      final initial =
+          lastActive != null &&
+              sessions.any((session) => session.id == lastActive)
+          ? lastActive
+          : sessions.first.id;
+      await switchSession(initial);
+    } catch (error) {
+      if (_disposed) return;
+      state = state.copyWith(error: 'AI 会话加载失败：$error', isStreaming: false);
+    }
+  }
+
+  Future<List<AiSession>> getSessionsAsync() async {
     final config = ref.read(aiConfigProvider).value;
-    if (_isDisposed ||
-        sessionId == null ||
-        environment == null ||
-        config == null) {
+    if (config != null) await _migrateLegacySessions(config);
+    final repository = ref.read(aiConversationRepositoryV2Provider);
+    final conversations = <standard.AiConversation>[];
+    AiConversationCursor? cursor;
+    while (true) {
+      final page = await repository.getConversations(
+        before: cursor,
+        limit: 100,
+      );
+      conversations.addAll(page);
+      if (page.length < 100) break;
+      final last = page.last;
+      cursor = AiConversationCursor(updatedAt: last.updatedAt, id: last.id);
+    }
+    final sessions =
+        conversations
+            .where((conversation) => conversation.scopeId == packageName)
+            .map(
+              (conversation) => AiSession(
+                id: conversation.id,
+                name: conversation.title,
+                packageName: packageName,
+                lastUpdateTime: conversation.updatedAt.toLocal(),
+                lastMessage: '',
+              ),
+            )
+            .toList(growable: true)
+          ..sort(
+            (left, right) =>
+                right.lastUpdateTime.compareTo(left.lastUpdateTime),
+          );
+    if (!_disposed) {
+      state = state.copyWith(sessions: List<AiSession>.unmodifiable(sessions));
+    }
+    return sessions;
+  }
+
+  List<AiSession> getSessions() => state.sessions;
+
+  Future<void> switchSession(String sessionId) async {
+    if (state.isStreaming) {
+      state = state.copyWith(error: '请先停止当前响应，再切换会话');
       return;
     }
-    _standardSessionReady = false;
-    await _standardSessionSubscription?.cancel();
-    await _standardSessionController?.close();
-    _standardSessionSubscription = null;
-    _standardSessionController = null;
+    final conversation = await ref
+        .read(aiConversationRepositoryV2Provider)
+        .getConversation(sessionId);
+    if (conversation == null || conversation.scopeId != packageName) {
+      state = state.copyWith(error: '会话不存在或不属于当前逆向目标');
+      return;
+    }
+    _clearStreaming();
+    state = state.copyWith(
+      currentSessionId: sessionId,
+      protocolMessages: const [],
+      messages: const [],
+      visibleMessageCount: 10,
+      hasOlderMessages: false,
+      error: null,
+      isStreaming: false,
+      lastResponseIssue: null,
+      sessionContext: AiChatSessionContext(
+        sessionRules: state.systemPrompt ?? '',
+      ),
+      contextStats: const AiChatContextStats(),
+      contextVersion: AiChatSessionContext.currentVersion,
+    );
+    await ref
+        .read(aiChatActionRepositoryProvider)
+        .saveLastActiveSessionId(packageName, sessionId);
+    await _attachSession();
+  }
+
+  Future<void> _attachSession() async {
+    final sessionId = state.currentSessionId;
+    final environment = _environment;
+    if (_disposed || sessionId == null || environment == null) return;
+
+    _sessionReady = false;
+    final previousSubscription = _sessionSubscription;
+    final previousController = _sessionController;
+    _sessionSubscription = null;
+    _sessionController = null;
+    await previousSubscription?.cancel();
+    await previousController?.close();
+
+    AiChatSessionController? controller;
     try {
-      await _migrateLegacySessions(config);
-      final controller = AiChatSessionController(
+      controller = AiChatSessionController(
         conversationId: sessionId,
         catalogRepository: ref.read(aiCatalogRepositoryProvider),
         conversationRepository: ref.read(aiConversationRepositoryV2Provider),
@@ -264,230 +319,203 @@ class AiChatAction extends _$AiChatAction {
         idFactory: const Uuid().v4,
         environment: environment,
       );
-      _standardSessionController = controller;
-      _standardSessionSubscription = controller.states.listen(
-        _applyStandardSessionState,
-      );
+      _sessionController = controller;
+      _sessionSubscription = controller.states.listen(_applySessionState);
       await controller.initialize();
-      if (identical(_standardSessionController, controller)) {
-        _standardSessionReady = true;
-        _applyStandardSessionState(controller.state);
+      if (!identical(_sessionController, controller)) {
+        await controller.close();
+        return;
       }
-    } catch (_) {
-      _standardSessionReady = false;
+      _sessionReady = true;
+      _applySessionState(controller.state);
+    } catch (error) {
+      if (controller != null && !identical(_sessionController, controller)) {
+        await controller.close();
+        return;
+      }
+      _sessionReady = false;
+      state = state.copyWith(
+        error: '标准 AI 会话初始化失败：$error',
+        isStreaming: false,
+        lastResponseIssue: AiResponseIssue.toolInitError,
+      );
     }
   }
 
-  void _applyStandardSessionState(AiChatSessionState next) {
-    if (_isDisposed || next.conversationId != state.currentSessionId) return;
-    final protocolMessages = next.messages
+  void _applySessionState(AiChatSessionState next) {
+    if (_disposed || next.conversationId != state.currentSessionId) return;
+    final protocol = next.messages
         .map(LegacyAiConversationMigrator.toLegacyMessage)
         .toList(growable: false);
-    var displayMessages = _buildDisplayMessagesFromProtocol(protocolMessages);
+    var display = _displayMessages(protocol);
     final snapshot = next.runSnapshot;
-    if (snapshot != null &&
-        (snapshot.text.isNotEmpty || snapshot.reasoning.isNotEmpty)) {
-      final streaming = AiMessage(
-        id: next.activeAssistantMessageId ?? 'standard-streaming',
-        role: 'assistant',
-        content: _composeDisplayContent(
-          thinkingContent: snapshot.reasoning,
-          answerContent: snapshot.text,
-        ),
-      );
-      displayMessages = [...displayMessages, streaming];
+    if (snapshot != null) {
+      final content = _displayContent(snapshot.reasoning, snapshot.text);
+      final id = next.activeAssistantMessageId ?? 'standard-streaming';
+      final streaming = AiMessage(id: id, role: 'assistant', content: content);
+      final index = display.indexWhere((message) => message.id == id);
+      if (index < 0) {
+        display = [...display, streaming];
+      } else {
+        final updated = List<AiMessage>.from(display);
+        updated[index] = streaming;
+        display = updated;
+      }
+      _pushStreaming(content);
+      _pushThinking(snapshot.reasoning.isNotEmpty && snapshot.text.isEmpty);
     }
-    final isStreaming =
+
+    final streaming =
         next.phase == AiChatSessionPhase.requesting ||
         next.phase == AiChatSessionPhase.streaming ||
         next.phase == AiChatSessionPhase.cancelling;
+    if (!streaming && snapshot == null) _clearStreaming();
     state = state.copyWith(
-      protocolMessages: List<AiMessage>.unmodifiable(protocolMessages),
-      messages: List<AiMessage>.unmodifiable(displayMessages),
-      isStreaming: isStreaming,
+      sessions: _updatedSessions(next.conversation),
+      protocolMessages: List<AiMessage>.unmodifiable(protocol),
+      messages: List<AiMessage>.unmodifiable(display),
+      hasOlderMessages: next.hasOlderMessages,
+      isStreaming: streaming,
       error: next.failure == null
           ? null
           : LegacyAiConversationMigrator.describeAiFailure(next.failure!),
-      lastResponseIssue: next.failure == null
-          ? null
-          : AiResponseIssue.networkError,
+      lastResponseIssue: _issueFor(next.failure),
     );
   }
 
-  Future<void> _initSessions() async {
-    try {
-      final config = await ref.read(aiConfigProvider.future);
-      await _migrateLegacySessions(config);
-      final sessions = await getSessionsAsync();
-      if (_isDisposed || sessions.isEmpty) {
-        return;
-      }
-
-      final lastActiveSessionId = await ref
-          .read(aiChatQueryRepositoryProvider)
-          .getLastActiveSessionId(packageName);
-      if (_isDisposed) {
-        return;
-      }
-
-      final initialSessionId =
-          lastActiveSessionId != null &&
-              sessions.any((session) => session.id == lastActiveSessionId)
-          ? lastActiveSessionId
-          : sessions.first.id;
-      await switchSession(initialSessionId);
-    } catch (_) {
-      if (_isDisposed) {
-        return;
-      }
-      state = state.copyWith(error: 'AI 会话加载失败', isStreaming: false);
+  List<AiSession> _updatedSessions(standard.AiConversation? conversation) {
+    if (conversation == null) return state.sessions;
+    final sessions = List<AiSession>.from(state.sessions);
+    final index = sessions.indexWhere((item) => item.id == conversation.id);
+    final mapped = AiSession(
+      id: conversation.id,
+      name: conversation.title,
+      packageName: packageName,
+      lastUpdateTime: conversation.updatedAt.toLocal(),
+      lastMessage: '',
+    );
+    if (index < 0) {
+      sessions.add(mapped);
+    } else {
+      sessions[index] = mapped;
     }
-  }
-
-  Future<List<AiSession>> getSessionsAsync() async {
-    final standardSessions = await _getStandardSessions();
-    final sessions = standardSessions.isNotEmpty
-        ? standardSessions
-        : await ref
-              .read(aiChatQueryRepositoryProvider)
-              .getSessions(packageName);
     sessions.sort(
       (left, right) => right.lastUpdateTime.compareTo(left.lastUpdateTime),
     );
-    if (_isDisposed) {
-      return sessions;
-    }
-    state = state.copyWith(sessions: List<AiSession>.unmodifiable(sessions));
-    return sessions;
+    return List<AiSession>.unmodifiable(sessions);
   }
 
-  List<AiSession> getSessions() => state.sessions;
-
-  Future<void> switchSession(String sessionId) async {
-    _clearStreamingContent();
-    _clearStreamingThinking();
-    var protocolMessages = await _readStandardMessages(sessionId);
-    if (protocolMessages.isEmpty) {
-      protocolMessages = await ref
-          .read(aiChatQueryRepositoryProvider)
-          .getChatHistory(packageName, sessionId);
+  AiResponseIssue? _issueFor(standard.AiFailure? failure) {
+    if (failure == null || failure.code == standard.AiFailureCode.cancelled) {
+      return null;
     }
-    final storedContext = await ref
-        .read(aiChatQueryRepositoryProvider)
-        .getSessionContext(packageName, sessionId);
-    if (_isDisposed) {
-      return;
-    }
-
-    final contextAssembly = _buildPersistedContextAssembly(
-      protocolMessages: protocolMessages,
-      previousContext: storedContext,
-      config: ref.read(aiConfigProvider).value,
-      lastError: null,
-    );
-    final displayMessages = _buildDisplayMessagesFromProtocol(
-      contextAssembly.sanitizedProtocolMessages,
-    );
-    state = state.copyWith(
-      currentSessionId: sessionId,
-      protocolMessages: List<AiMessage>.unmodifiable(
-        contextAssembly
-            .sanitizedProtocolMessages, // This sanitized version only cleans broken tools now, won't compact implicitly
-      ),
-      messages: List<AiMessage>.unmodifiable(displayMessages),
-      visibleMessageCount: 10,
-      error: null,
-      isStreaming: false,
-      lastResponseIssue: null,
-      sessionContext: contextAssembly.context,
-      contextStats: contextAssembly.context.stats,
-      contextVersion: contextAssembly.context.version,
-    );
-    await ref
-        .read(aiChatActionRepositoryProvider)
-        .saveLastActiveSessionId(packageName, sessionId);
-    await _attachStandardSession();
+    return switch (failure.code) {
+      standard.AiFailureCode.protocolMalformed => AiResponseIssue.parseError,
+      standard.AiFailureCode.protocolTruncated =>
+        AiResponseIssue.partialResponse,
+      _ => AiResponseIssue.networkError,
+    };
   }
 
   void loadMore() {
-    if (state.visibleMessageCount >= state.totalVisibleMessagesCount) {
+    if (state.visibleMessageCount < state.messages.length) {
+      state = state.copyWith(
+        visibleMessageCount: (state.visibleMessageCount + 10).clamp(
+          0,
+          state.messages.length,
+        ),
+      );
       return;
     }
+    if (state.hasOlderMessages && _sessionReady) {
+      unawaited(_loadOlderMessages());
+    }
+  }
 
-    state = state.copyWith(
-      visibleMessageCount: (state.visibleMessageCount + 10).clamp(
-        0,
-        state.totalVisibleMessagesCount,
-      ),
-    );
+  Future<void> _loadOlderMessages() async {
+    try {
+      await _sessionController?.loadOlderMessages();
+      if (_disposed) return;
+      state = state.copyWith(
+        visibleMessageCount: (state.visibleMessageCount + 10).clamp(
+          0,
+          state.messages.length,
+        ),
+      );
+    } catch (error) {
+      if (!_disposed) state = state.copyWith(error: '加载历史消息失败：$error');
+    }
   }
 
   Future<void> createSession(String name) async {
-    final sessionId = const Uuid().v4();
-    final sessionRules = state.systemPrompt ?? '';
-    final session = AiSession(
-      id: sessionId,
-      name: name,
-      packageName: packageName,
-      lastUpdateTime: DateTime.now(),
-      lastMessage: '',
-    );
-
-    final updatedSessions = [session, ...state.sessions];
+    final config = ref.read(aiConfigProvider).value;
+    if (config == null) {
+      state = state.copyWith(error: 'AI 配置未加载');
+      return;
+    }
+    await _migrateLegacySessions(config);
+    final assistantId = 'legacy-assistant-${config.id}';
+    final assistant = await ref
+        .read(aiCatalogRepositoryProvider)
+        .getAssistant(assistantId);
+    if (assistant == null) {
+      state = state.copyWith(error: '标准 AI 配置尚未就绪，无法创建会话');
+      return;
+    }
+    final now = DateTime.now();
+    final id = const Uuid().v4();
+    final title = name.trim().isEmpty ? assistant.name : name.trim();
+    await ref
+        .read(aiConversationRepositoryV2Provider)
+        .saveConversation(
+          standard.AiConversation(
+            id: id,
+            title: title,
+            assistantId: assistantId,
+            environmentId: 'general',
+            scopeId: packageName,
+            createdAt: now.toUtc(),
+            updatedAt: now.toUtc(),
+          ),
+        );
     state = state.copyWith(
-      currentSessionId: sessionId,
-      sessions: List<AiSession>.unmodifiable(updatedSessions),
+      currentSessionId: id,
+      sessions: [
+        AiSession(
+          id: id,
+          name: title,
+          packageName: packageName,
+          lastUpdateTime: now,
+          lastMessage: '',
+        ),
+        ...state.sessions,
+      ],
       protocolMessages: const [],
       messages: const [],
       visibleMessageCount: 10,
+      hasOlderMessages: false,
       error: null,
       isStreaming: false,
       lastResponseIssue: null,
-      sessionContext: AiChatSessionContext(sessionRules: sessionRules),
+      sessionContext: AiChatSessionContext(
+        sessionRules: state.systemPrompt ?? '',
+      ),
       contextStats: const AiChatContextStats(),
       contextVersion: AiChatSessionContext.currentVersion,
     );
-
     await ref
         .read(aiChatActionRepositoryProvider)
-        .saveLastActiveSessionId(packageName, sessionId);
-    final config = ref.read(aiConfigProvider).value;
-    var savedToStandard = false;
-    if (config != null) {
-      try {
-        await _conversationMigrator.saveLegacySession(
-          packageName: packageName,
-          session: session,
-          messages: const [],
-          config: config,
-        );
-        savedToStandard = true;
-        _standardPersistenceAvailable = true;
-      } catch (_) {
-        // Fall through to the legacy index when the standard store is not
-        // ready yet (for example during first-run database initialization).
-      }
-    }
-    if (!savedToStandard) {
-      await ref
-          .read(aiChatActionRepositoryProvider)
-          .saveSessions(packageName, updatedSessions);
-    }
-    await _attachStandardSession();
+        .saveLastActiveSessionId(packageName, id);
+    await _attachSession();
   }
 
   Future<void> send(String text) async {
-    if (text.trim().isEmpty || state.isStreaming) {
-      return;
-    }
-    _stopRequested = false;
-
+    if (text.trim().isEmpty || state.isStreaming) return;
     if (state.currentSessionId == null) {
       await createSession(
         '新对话 ${DateTime.now().hour}:${DateTime.now().minute}',
       );
     }
-
     if (state.sessionInitState == AiSessionInitState.initializing) {
       state = state.copyWith(
         error: '逆向会话仍在初始化，请稍后再试。',
@@ -495,7 +523,6 @@ class AiChatAction extends _$AiChatAction {
       );
       return;
     }
-
     if (state.sessionInitState == AiSessionInitState.failed) {
       state = state.copyWith(
         error: state.error ?? '逆向会话初始化失败，当前无法发送消息。',
@@ -503,1012 +530,167 @@ class AiChatAction extends _$AiChatAction {
       );
       return;
     }
-
-    final config = ref.read(aiConfigProvider).value;
-    if (config == null) {
-      state = state.copyWith(error: 'AI 配置未加载', isStreaming: false);
-      return;
-    }
+    final controller = _readyController();
+    if (controller == null) return;
+    final model = controller.state.model;
     if (AiMultimodalMessageCodec.hasImageAttachments(text) &&
-        _looksExplicitlyTextOnlyModel(config.moduleName)) {
+        model?.capabilities.visionInput == false &&
+        _looksExplicitlyTextOnlyModel(model?.id ?? '')) {
       state = state.copyWith(
         error: '当前模型不支持图片理解，请切换到支持视觉的模型后再发送图片。',
-        isStreaming: false,
         lastResponseIssue: AiResponseIssue.parseError,
       );
       return;
     }
-
-    final standardController = _standardSessionController;
-    if (_standardSessionReady && standardController != null) {
-      try {
-        await standardController.sendText(text);
-      } catch (error) {
-        if (_isDisposed) return;
+    try {
+      await controller.sendText(text);
+    } catch (error) {
+      if (!_disposed) {
         state = state.copyWith(
           error: '消息发送失败：$error',
           isStreaming: false,
           lastResponseIssue: AiResponseIssue.networkError,
         );
       }
-      return;
     }
-
-    await _beginUserTurn(
-      config: config,
-      userMessage: AiMessage(
-        id: const Uuid().v4(),
-        role: 'user',
-        content: text,
-      ),
-      baseProtocolMessages: state.protocolMessages,
-      retriesRemaining: _defaultTransientRetryCount,
-      recoveryMode: AiChatRecoveryMode.retryLastTurn,
-    );
   }
 
   Future<void> editUserMessageAndResend({
     required String messageId,
     required String updatedText,
   }) async {
-    if (state.isStreaming) {
-      return;
-    }
-
-    final config = ref.read(aiConfigProvider).value;
-    if (config == null) {
-      state = state.copyWith(error: 'AI 配置未加载', isStreaming: false);
-      return;
-    }
-
-    final protocolIndex = state.protocolMessages.indexWhere(
+    if (state.isStreaming) return;
+    final index = state.protocolMessages.indexWhere(
       (message) => message.id == messageId && message.role == 'user',
     );
-    if (protocolIndex == -1) {
-      return;
-    }
-
-    final originalMessage = state.protocolMessages[protocolIndex];
-    if (!AiMultimodalMessageCodec.canEditText(originalMessage.content)) {
-      return;
-    }
-
-    final nextContent = AiMultimodalMessageCodec.replaceUserText(
-      originalMessage.content,
+    if (index < 0) return;
+    final original = state.protocolMessages[index];
+    if (!AiMultimodalMessageCodec.canEditText(original.content)) return;
+    final content = AiMultimodalMessageCodec.replaceUserText(
+      original.content,
       updatedText,
     );
-    if (nextContent.trim().isEmpty) {
-      return;
+    if (content.trim().isEmpty) return;
+    final controller = _readyController();
+    if (controller == null) return;
+    try {
+      await controller.editUserMessageAndResend(
+        messageId: messageId,
+        updatedText: content,
+      );
+    } catch (error) {
+      if (!_disposed) {
+        state = state.copyWith(
+          error: '消息发送失败：$error',
+          lastResponseIssue: AiResponseIssue.networkError,
+        );
+      }
     }
-    if (AiMultimodalMessageCodec.hasImageAttachments(nextContent) &&
-        _looksExplicitlyTextOnlyModel(config.moduleName)) {
+  }
+
+  Future<void> retryByMessageId(String messageId) async {
+    if (state.isStreaming) return;
+    final controller = _readyController();
+    if (controller == null) return;
+    try {
+      await controller.retryByMessageId(messageId);
+    } catch (error) {
+      if (!_disposed) {
+        state = state.copyWith(
+          error: '重试失败：$error',
+          lastResponseIssue: AiResponseIssue.networkError,
+        );
+      }
+    }
+  }
+
+  Future<void> retryLastTurn() async {
+    if (state.isStreaming || !state.hasUserMessages) return;
+    final lastUser = state.messages.lastWhere(
+      (message) => message.role == 'user',
+    );
+    await retryByMessageId(lastUser.id);
+  }
+
+  Future<void> stopStreaming() async {
+    if (!state.isStreaming) return;
+    final controller = _readyController(showError: false);
+    if (controller == null) {
       state = state.copyWith(
-        error: '当前模型不支持图片理解，请切换到支持视觉的模型后再发送图片。',
+        error: '标准 AI 会话尚未就绪，当前没有可取消的请求。',
         isStreaming: false,
-        lastResponseIssue: AiResponseIssue.parseError,
+        lastResponseIssue: AiResponseIssue.toolInitError,
       );
       return;
     }
+    controller.cancel();
+  }
 
-    final updatedUserMessage = originalMessage.copyWith(content: nextContent);
-    final baseProtocolMessages = state.protocolMessages
-        .take(protocolIndex)
-        .toList(growable: false);
-    await _beginUserTurn(
-      config: config,
-      userMessage: updatedUserMessage,
-      baseProtocolMessages: baseProtocolMessages,
-      retriesRemaining: _defaultTransientRetryCount,
-      recoveryMode: AiChatRecoveryMode.retryLastTurn,
+  Future<void> deleteSession(String sessionId) async {
+    if (state.currentSessionId == sessionId && state.isStreaming) {
+      state = state.copyWith(error: '请先停止当前响应，再删除会话');
+      return;
+    }
+    if (state.currentSessionId == sessionId) {
+      await _sessionSubscription?.cancel();
+      await _sessionController?.close();
+      _sessionSubscription = null;
+      _sessionController = null;
+      _sessionReady = false;
+    }
+    await ref
+        .read(aiConversationRepositoryV2Provider)
+        .deleteConversation(sessionId);
+    final remaining = List<AiSession>.from(state.sessions)
+      ..removeWhere((session) => session.id == sessionId);
+    if (state.currentSessionId != sessionId) {
+      state = state.copyWith(sessions: List.unmodifiable(remaining));
+      return;
+    }
+    if (remaining.isNotEmpty) {
+      state = state.copyWith(sessions: List.unmodifiable(remaining));
+      await switchSession(remaining.first.id);
+      return;
+    }
+    _clearStreaming();
+    state = state.copyWith(
+      sessions: const [],
+      currentSessionId: null,
+      messages: const [],
+      protocolMessages: const [],
+      visibleMessageCount: 10,
+      hasOlderMessages: false,
+      isStreaming: false,
+      error: null,
+      lastResponseIssue: null,
+      sessionContext: AiChatSessionContext(
+        sessionRules: state.systemPrompt ?? '',
+      ),
+      contextStats: const AiChatContextStats(),
+      contextVersion: AiChatSessionContext.currentVersion,
     );
+    await ref
+        .read(aiChatActionRepositoryProvider)
+        .clearLastActiveSessionId(packageName);
+  }
+
+  Future<void> deleteHistory() async {
+    final id = state.currentSessionId;
+    if (id != null) await deleteSession(id);
+  }
+
+  Future<void> clear() async {
+    await createSession('新对话 ${DateTime.now().hour}:${DateTime.now().minute}');
   }
 
   void revealMessage(String messageId) {
     final index = state.messages.indexWhere(
       (message) => message.id == messageId,
     );
-    if (index == -1) {
-      return;
-    }
-    final requiredVisibleCount = state.messages.length - index;
-    if (requiredVisibleCount <= state.visibleMessageCount) {
-      return;
-    }
-    state = state.copyWith(
-      visibleMessageCount: requiredVisibleCount.clamp(
-        0,
-        state.totalVisibleMessagesCount,
-      ),
-    );
-  }
-
-  Future<void> _runAssistantTurn({
-    required AiConfig config,
-    required List<AiMessage> protocolMessages,
-    required String placeholderId,
-    required int retriesRemaining,
-    List<Map<String, dynamic>>? toolsJson,
-    AiChatRecoveryMode recoveryMode = AiChatRecoveryMode.none,
-  }) async {
-    final contextAssembly = _assembleContext(
-      protocolMessages: protocolMessages,
-      previousContext: state.sessionContext,
-      config: config,
-      recoveryMode: recoveryMode,
-      lastError: null,
-    );
-    final response = await _collectAssistantResponse(
-      config: config,
-      requestMessages: contextAssembly.requestMessages,
-      toolsJson: toolsJson,
-    );
-    if (_isDisposed) return;
-    if (_stopRequested) return;
-
-    if (response.userStopped) {
-      // The user manually stopped the generation.
-      // `stopStreaming()` has ALREADY handled the partial persistence,
-      // history saving, and UI state cleanup perfectly to avoid race conditions.
-      // Do nothing else here.
-      return;
-    }
-
-    if (response.issue == AiResponseIssue.emptyResponse &&
-        retriesRemaining > 0) {
-      await _retryAssistantTurn(
-        config: config,
-        protocolMessages: contextAssembly.sanitizedProtocolMessages,
-        placeholderId: placeholderId,
-        retriesRemaining: retriesRemaining,
-        toolsJson: toolsJson,
-        recoveryMode: recoveryMode,
-      );
-      return;
-    }
-
-    if (response.issue == AiResponseIssue.emptyResponse) {
-      _markDisplayMessageError(
-        placeholderId,
-        'AI 未返回有效内容，请稍后重试。',
-        AiResponseIssue.emptyResponse,
-      );
-      return;
-    }
-
-    if (response.issue == AiResponseIssue.parseError) {
-      _markDisplayMessageError(
-        placeholderId,
-        response.errorMessage ?? 'AI 响应格式异常。',
-        AiResponseIssue.parseError,
-      );
-      return;
-    }
-
-    if (response.issue == AiResponseIssue.networkError) {
-      if (retriesRemaining > 0 && _isRetryableCollectedIssue(response)) {
-        await _retryAssistantTurn(
-          config: config,
-          protocolMessages: contextAssembly.sanitizedProtocolMessages,
-          placeholderId: placeholderId,
-          retriesRemaining: retriesRemaining,
-          toolsJson: toolsJson,
-          recoveryMode: recoveryMode,
-        );
-        return;
-      }
-      _markDisplayMessageError(
-        placeholderId,
-        response.errorMessage ?? 'AI 请求失败，自动重试后仍未恢复。',
-        AiResponseIssue.networkError,
-      );
-      return;
-    }
-
-    if (response.issue == AiResponseIssue.partialResponse) {
-      final partialDisplayContent = _composeDisplayContent(
-        thinkingContent: response.thinkingContent,
-        answerContent: response.content,
-      );
-      final fallbackMessage = response.errorMessage ?? 'AI 响应中断，内容可能不完整。';
-      final partialContent = partialDisplayContent.isEmpty
-          ? fallbackMessage
-          : partialDisplayContent;
-      if (retriesRemaining > 0 && _isRetryableCollectedIssue(response)) {
-        final recovered = await _tryAutoRecoverPartialResponse(
-          config: config,
-          protocolMessages: contextAssembly.sanitizedProtocolMessages,
-          placeholderId: placeholderId,
-          retriesRemaining: retriesRemaining,
-          toolsJson: toolsJson,
-          recoveryMode: recoveryMode,
-          partialAnswerContent: response.content,
-          partialDisplayContent: partialDisplayContent,
-        );
-        if (recovered) {
-          return;
-        }
-      }
-      _updateDisplayMessage(
-        placeholderId,
-        content: partialContent,
-        isError: true,
-      );
-      state = state.copyWith(
-        isStreaming: false,
-        error: response.errorMessage ?? 'AI 响应中断，内容可能不完整。',
-        lastResponseIssue: AiResponseIssue.partialResponse,
-      );
-      _syncContextState(
-        protocolMessages: contextAssembly.sanitizedProtocolMessages,
-        config: config,
-        lastError: response.errorMessage,
-        recoveryMode: recoveryMode,
-      );
-      await _saveChatHistory();
-      return;
-    }
-
-    if (response.toolCalls != null && response.toolCalls!.isNotEmpty) {
-      await _handleToolCalls(
-        config: config,
-        protocolMessages: contextAssembly.sanitizedProtocolMessages,
-        placeholderId: placeholderId,
-        reasoningItems: response.responsesReasoningItems,
-        initialContent: response.content,
-        initialThinkingContent: response.thinkingContent,
-        initialDisplayContent: _composeDisplayContent(
-          thinkingContent: response.thinkingContent,
-          answerContent: response.content,
-        ),
-        toolCalls: response.toolCalls!,
-        toolsJson: toolsJson,
-      );
-      return;
-    }
-
-    _finishAssistantMessage(
-      placeholderId,
-      _composeDisplayContent(
-        thinkingContent: response.thinkingContent,
-        answerContent: response.content,
-      ),
-      protocolMessages: [
-        ...contextAssembly.sanitizedProtocolMessages,
-        ..._buildResponsesReasoningProtocolMessages(
-          response.responsesReasoningItems,
-        ),
-        AiMessage(
-          id: const Uuid().v4(),
-          role: 'assistant',
-          content: response.content,
-          reasoningContent: response.thinkingContent.isNotEmpty
-              ? response.thinkingContent
-              : null,
-        ),
-      ],
-    );
-  }
-
-  Future<void> _handleToolCalls({
-    required AiConfig config,
-    required List<AiMessage> protocolMessages,
-    required String placeholderId,
-    required List<String> reasoningItems,
-    required List<Map<String, dynamic>> toolCalls,
-    required String initialContent,
-    required String initialThinkingContent,
-    required String initialDisplayContent,
-    List<Map<String, dynamic>>? toolsJson,
-  }) async {
-    final toolExecutor = _getToolExecutor();
-    if (toolExecutor == null) {
-      _markDisplayMessageError(
-        placeholderId,
-        '逆向会话未初始化完成，无法执行工具调用。',
-        AiResponseIssue.toolInitError,
-      );
-      return;
-    }
-
-    final shouldHidePreToolDisplay = _shouldHidePreToolDisplayContent();
-    final assistantToolMessage = AiMessage(
-      id: const Uuid().v4(),
-      role: 'assistant',
-      content: shouldHidePreToolDisplay ? '' : initialContent,
-      reasoningContent: _normalizeReasoningContentForProtocol(
-        reasoningItems: reasoningItems,
-        thinkingContent: config.apiType == AiApiType.openai
-            ? initialThinkingContent
-            : '',
-      ),
-      toolCalls: toolCalls,
-    );
-    var nextProtocolMessages = [
-      ...protocolMessages,
-      ..._buildResponsesReasoningProtocolMessages(reasoningItems),
-      assistantToolMessage,
-    ];
-    state = state.copyWith(
-      protocolMessages: List<AiMessage>.unmodifiable(nextProtocolMessages),
-    );
-    _syncContextState(
-      protocolMessages: nextProtocolMessages,
-      config: config,
-      recoveryMode: AiChatRecoveryMode.resumeToolPhase,
-    );
-    _refreshCheckpoint(
-      protocolMessages: state.protocolMessages,
-      recoveryMode: AiChatRecoveryMode.resumeToolPhase,
-    );
-
-    if (shouldHidePreToolDisplay) {
-      _removeDisplayMessage(placeholderId);
-    } else if (initialDisplayContent.isNotEmpty) {
-      _updateDisplayMessage(placeholderId, content: initialDisplayContent);
-    } else {
-      _removeDisplayMessage(placeholderId);
-    }
-
-    final parsedCalls = toolCalls
-        .map(AiToolCall.fromJson)
-        .toList(growable: false);
-    for (final call in parsedCalls) {
-      if (_stopRequested) {
-        await _finishStoppedToolPhase(config: config);
-        return;
-      }
-
-      final bubbleId = const Uuid().v4();
-      final initialToolBubbleContent = shouldHidePreToolDisplay
-          ? '⏳ `${call.name}`:'
-          : '调用 `${call.name}`${call.arguments.isNotEmpty ? '(${call.arguments.entries.map((entry) => '${entry.key}: ${entry.value}').join(', ')})' : ''}...';
-      _appendDisplayMessage(
-        AiMessage(
-          id: bubbleId,
-          role: 'assistant',
-          content: initialToolBubbleContent,
-          isToolResultBubble: true,
-        ),
-      );
-
-      final result = await toolExecutor.execute(
-        call,
-        onProgress: (progressContent) {
-          _updateDisplayMessage(
-            bubbleId,
-            content: '⏳ `${call.name}`:\n\n$progressContent',
-          );
-        },
-      );
-      _updateDisplayMessage(
-        bubbleId,
-        content:
-            '${result.success ? '✅' : '❌'} `${call.name}`:\n\n${result.content}',
-      );
-
-      if (_stopRequested) {
-        await _finishStoppedToolPhase(config: config);
-        return;
-      }
-
-      nextProtocolMessages = [
-        ...state.protocolMessages,
-        AiMessage.toolResult(
-          toolCallId: result.toolCallId,
-          content: result.content,
-          isError: !result.success,
-        ),
-      ];
-      state = state.copyWith(
-        protocolMessages: List<AiMessage>.unmodifiable(nextProtocolMessages),
-      );
-      _syncContextState(
-        protocolMessages: nextProtocolMessages,
-        config: config,
-        recoveryMode: AiChatRecoveryMode.resumeToolPhase,
-      );
-      if (_isUserCancelledToolResult(result.content)) {
-        _refreshCheckpoint(
-          protocolMessages: state.protocolMessages,
-          recoveryMode: AiChatRecoveryMode.none,
-        );
-        await _finishStoppedToolPhase(config: config);
-        return;
-      }
-      _refreshCheckpoint(
-        protocolMessages: state.protocolMessages,
-        recoveryMode: AiChatRecoveryMode.resumeToolPhase,
-      );
-
-      if (!result.success && _isCriticalTool(call.name)) {
-        final errorMessage = AiMessage(
-          id: const Uuid().v4(),
-          role: 'assistant',
-          content: '关键工具 `${call.name}` 执行失败，无法继续分析。',
-          isError: true,
-        );
-        _appendDisplayMessage(errorMessage);
-        state = state.copyWith(
-          isStreaming: false,
-          error: errorMessage.content,
-          lastResponseIssue: AiResponseIssue.toolInitError,
-        );
-        _syncContextState(
-          protocolMessages: state.protocolMessages,
-          config: config,
-          lastError: errorMessage.content,
-          recoveryMode: AiChatRecoveryMode.resumeToolPhase,
-        );
-        await _saveChatHistory();
-        return;
-      }
-    }
-
-    await _saveChatHistory();
-
-    if (_stopRequested) {
-      await _finishStoppedToolPhase(config: config);
-      return;
-    }
-
-    final newPlaceholder = AiMessage(
-      id: const Uuid().v4(),
-      role: 'assistant',
-      content: '',
-    );
-    _appendDisplayMessage(newPlaceholder);
-
-    Future<void>.microtask(() async {
-      try {
-        await _runAssistantTurn(
-          config: config,
-          protocolMessages: state.protocolMessages,
-          placeholderId: newPlaceholder.id,
-          retriesRemaining: _defaultTransientRetryCount,
-          toolsJson: toolsJson,
-          recoveryMode: AiChatRecoveryMode.resumeToolPhase,
-        );
-      } catch (error) {
-        _markDisplayMessageError(
-          newPlaceholder.id,
-          '发送失败：${_describeThrownError(error)}',
-          AiResponseIssue.networkError,
-        );
-      }
-    });
-  }
-
-  Future<_CollectedAssistantResponse> _collectAssistantResponse({
-    required AiConfig config,
-    required List<AiMessage> requestMessages,
-    List<Map<String, dynamic>>? toolsJson,
-  }) async {
-    final cancelToken = CancelToken();
-    _activeRequestCancelToken = cancelToken;
-    final stream = ref
-        .read(aiChatActionRepositoryProvider)
-        .getChatStream(
-          config: config,
-          messages: requestMessages,
-          tools: toolsJson,
-          cancelToken: cancelToken,
-        );
-
-    final contentBuffer = StringBuffer();
-    final thinkingBuffer = StringBuffer();
-    final responsesReasoningItems = <String>[];
-    List<Map<String, dynamic>>? toolCalls;
-    var sawChunk = false;
-    final completer = Completer<_CollectedAssistantResponse>();
-    _activeResponseCompleter = completer;
-    _latestStreamingContent = '';
-    _clearStreamingThinking();
-
-    try {
-      _activeResponseSubscription = stream.listen(
-        (chunk) {
-          if (_isDisposed) {
-            return;
-          }
-
-          if (chunk.isThinking) {
-            sawChunk = true;
-            _pushStreamingThinking(true);
-            if (chunk.content.isNotEmpty) {
-              thinkingBuffer.write(chunk.content);
-              _latestStreamingThinkingContent = thinkingBuffer.toString();
-              _pushStreamingContent(
-                _composeDisplayContent(
-                  thinkingContent: _latestStreamingThinkingContent,
-                  answerContent: _latestStreamingContent,
-                ),
-              );
-            }
-            return;
-          }
-
-          if (OpenAiResponsesReasoningItemCodec.isEncoded(chunk.content)) {
-            sawChunk = true;
-            responsesReasoningItems.add(chunk.content);
-            return;
-          }
-
-          sawChunk = true;
-          if (chunk.hasToolCalls) {
-            toolCalls = chunk.toolCalls;
-            return;
-          }
-
-          if (chunk.content.isNotEmpty) {
-            _pushStreamingThinking(false);
-            contentBuffer.write(chunk.content);
-            _latestStreamingContent = contentBuffer.toString();
-            _pushStreamingContent(
-              _composeDisplayContent(
-                thinkingContent: _latestStreamingThinkingContent,
-                answerContent: _latestStreamingContent,
-              ),
-            );
-          }
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          if (completer.isCompleted) {
-            return;
-          }
-
-          final bufferedContent = contentBuffer.toString();
-          if (error is PlatformException) {
-            if (bufferedContent.isNotEmpty) {
-              completer.complete(
-                _CollectedAssistantResponse(
-                  content: bufferedContent,
-                  thinkingContent: thinkingBuffer.toString(),
-                  responsesReasoningItems: List<String>.unmodifiable(
-                    responsesReasoningItems,
-                  ),
-                  issue: AiResponseIssue.partialResponse,
-                  errorMessage: _describePlatformException(error),
-                  retryableIssue: true,
-                ),
-              );
-              return;
-            }
-            completer.complete(
-              _CollectedAssistantResponse(
-                content: bufferedContent,
-                thinkingContent: thinkingBuffer.toString(),
-                responsesReasoningItems: List<String>.unmodifiable(
-                  responsesReasoningItems,
-                ),
-                issue: _classifyPlatformIssue(error),
-                errorMessage: _describePlatformException(error),
-                retryableIssue: _isRetryablePlatformException(error),
-              ),
-            );
-            return;
-          }
-
-          if (bufferedContent.isNotEmpty) {
-            completer.complete(
-              _CollectedAssistantResponse(
-                content: bufferedContent,
-                thinkingContent: thinkingBuffer.toString(),
-                responsesReasoningItems: List<String>.unmodifiable(
-                  responsesReasoningItems,
-                ),
-                issue: AiResponseIssue.partialResponse,
-                errorMessage: error.toString(),
-                retryableIssue: true,
-              ),
-            );
-            return;
-          }
-
-          completer.complete(
-            _CollectedAssistantResponse(
-              content: '',
-              responsesReasoningItems: List<String>.unmodifiable(
-                responsesReasoningItems,
-              ),
-              issue: AiResponseIssue.networkError,
-              errorMessage: error.toString(),
-              retryableIssue: _looksRetryableNetworkErrorText(error.toString()),
-            ),
-          );
-        },
-        onDone: () {
-          if (completer.isCompleted) {
-            return;
-          }
-
-          final fullContent = contentBuffer.toString();
-          if (!sawChunk &&
-              (toolCalls == null || (toolCalls?.isEmpty ?? true)) &&
-              fullContent.isEmpty) {
-            completer.complete(
-              const _CollectedAssistantResponse(
-                content: '',
-                issue: AiResponseIssue.emptyResponse,
-              ),
-            );
-            return;
-          }
-
-          if (fullContent.isEmpty &&
-              (toolCalls == null || (toolCalls?.isEmpty ?? true))) {
-            completer.complete(
-              const _CollectedAssistantResponse(
-                content: '',
-                issue: AiResponseIssue.emptyResponse,
-              ),
-            );
-            return;
-          }
-
-          completer.complete(
-            _CollectedAssistantResponse(
-              content: fullContent,
-              thinkingContent: thinkingBuffer.toString(),
-              responsesReasoningItems: List<String>.unmodifiable(
-                responsesReasoningItems,
-              ),
-              toolCalls: toolCalls,
-            ),
-          );
-        },
-        cancelOnError: false,
-      );
-
-      return await completer.future;
-    } finally {
-      if (identical(_activeRequestCancelToken, cancelToken)) {
-        _activeRequestCancelToken = null;
-      }
-      if (identical(_activeResponseCompleter, completer)) {
-        _activeResponseCompleter = null;
-      }
-      _activeResponseSubscription = null;
-      _latestStreamingContent = '';
-      _latestStreamingThinkingContent = '';
-      _clearStreamingThinking();
-    }
-  }
-
-  List<AiMessage> _buildRequestMessages(
-    List<AiMessage> protocolMessages,
-    AiConfig config,
-  ) {
-    final historyMessages = _selectProtocolWindow(protocolMessages, config);
-    return [
-      if (state.systemPrompt != null && state.systemPrompt!.isNotEmpty)
-        AiMessage(
-          id: const Uuid().v4(),
-          role: 'system',
-          content: state.systemPrompt!,
-        ),
-      ...historyMessages,
-    ];
-  }
-
-  List<AiMessage> _selectProtocolWindow(
-    List<AiMessage> protocolMessages,
-    AiConfig config,
-  ) {
-    final summaryMessage = _findLatestSessionSummary(protocolMessages);
-    final workingMessages = protocolMessages
-        .where((message) => !_isSessionSummary(message))
-        .toList(growable: false);
-    final maxRounds = config.memoryRounds <= 0
-        ? 0
-        : config.memoryRounds.toInt();
-    if (maxRounds <= 0 || workingMessages.isEmpty) {
-      return List<AiMessage>.unmodifiable([
-        if (summaryMessage != null) summaryMessage,
-        ...workingMessages,
-      ]);
-    }
-
-    var userRounds = 0;
-    var startIndex = 0;
-    for (var index = workingMessages.length - 1; index >= 0; index--) {
-      if (workingMessages[index].role == 'user') {
-        userRounds++;
-        if (userRounds >= maxRounds) {
-          startIndex = index;
-          break;
-        }
-      }
-    }
-    return List<AiMessage>.unmodifiable([
-      if (summaryMessage != null) summaryMessage,
-      ...workingMessages.sublist(startIndex),
-    ]);
-  }
-
-  List<Map<String, dynamic>>? _buildToolsJson() {
-    final toolsSpec = state.toolsSpec;
-    if (toolsSpec == null) {
-      return null;
-    }
-    if (state.sessionInitState != AiSessionInitState.ready) {
-      return null;
-    }
-
-    final apiType =
-        ref.read(aiConfigProvider).value?.apiType ?? AiApiType.openai;
-    return toolsSpec.buildToolsJson(apiType: apiType);
-  }
-
-  Future<void> retryByMessageId(String messageId) async {
-    if (state.isStreaming) {
-      return;
-    }
-
-    if (_standardSessionReady && _standardSessionController != null) {
-      await _standardSessionController!.retryLastResponse();
-      return;
-    }
-
-    final displayIndex = state.messages.indexWhere(
-      (message) => message.id == messageId,
-    );
-    if (displayIndex == -1) {
-      return;
-    }
-
-    final displayMessage = state.messages[displayIndex];
-    if (_isResumeToolPhaseEligible(displayMessage, displayIndex)) {
-      await _restoreFromCheckpointAndRun(
-        recoveryMode: AiChatRecoveryMode.resumeToolPhase,
-      );
-      return;
-    }
-
-    if (_isContinueEligible(displayMessage, displayIndex)) {
-      await _continueFromPartialMessage(displayMessage: displayMessage);
-      return;
-    }
-
-    await _restoreFromCheckpointAndRun(
-      recoveryMode: AiChatRecoveryMode.retryLastTurn,
-    );
-  }
-
-  Future<void> _continueFromPartialMessage({
-    required AiMessage displayMessage,
-  }) async {
-    final config = ref.read(aiConfigProvider).value;
-    if (config == null) {
-      state = state.copyWith(error: 'AI 配置未加载', isStreaming: false);
-      return;
-    }
-
-    final checkpoint = state.sessionContext.checkpoint;
-    if (checkpoint == null || checkpoint.lastUserMessage == null) {
-      await _restoreFromCheckpointAndRun(
-        recoveryMode: AiChatRecoveryMode.retryLastTurn,
-      );
-      return;
-    }
-
-    final partialContent = AiThinkingMarkup.strip(displayMessage.content);
-    final continuationProtocolMessages = List<AiMessage>.from(
-      checkpoint.protocolMessages,
-    );
-    final lastUserIndex = continuationProtocolMessages.lastIndexWhere(
-      (message) => message.id == checkpoint.lastUserMessage!.id,
-    );
-    if (lastUserIndex == -1) {
-      await _restoreFromCheckpointAndRun(
-        recoveryMode: AiChatRecoveryMode.retryLastTurn,
-      );
-      return;
-    }
-
-    final updatedUserMessage = continuationProtocolMessages[lastUserIndex]
-        .copyWith(
-          content: AiMultimodalMessageCodec.appendUserText(
-            continuationProtocolMessages[lastUserIndex].content,
-            _buildContinuationPrompt(partialContent),
-          ),
-        );
-    continuationProtocolMessages[lastUserIndex] = updatedUserMessage;
-    final displayMessages = [
-      ..._buildDisplayMessagesFromProtocol(checkpoint.protocolMessages),
-      displayMessage.copyWith(isError: false),
-    ];
-    final placeholder = AiMessage(
-      id: const Uuid().v4(),
-      role: 'assistant',
-      content: '',
-    );
-    final contextAssembly = _assembleContext(
-      protocolMessages: continuationProtocolMessages,
-      previousContext: state.sessionContext,
-      config: config,
-      recoveryMode: AiChatRecoveryMode.continueGeneration,
-    );
-    final checkpointForContinuation = checkpoint.copyWith(
-      protocolMessages: contextAssembly.sanitizedProtocolMessages,
-      recoveryMode: AiChatRecoveryMode.continueGeneration,
-    );
-    state = state.copyWith(
-      messages: List<AiMessage>.unmodifiable([...displayMessages, placeholder]),
-      protocolMessages: List<AiMessage>.unmodifiable(
-        contextAssembly.sanitizedProtocolMessages,
-      ),
-      isStreaming: true,
-      error: null,
-      lastResponseIssue: null,
-      sessionContext: contextAssembly.context.copyWith(
-        checkpoint: checkpointForContinuation,
-      ),
-      contextStats: contextAssembly.context.stats,
-      contextVersion: contextAssembly.context.version,
-    );
-    await _saveChatHistory();
-
-    Future<void>.microtask(() async {
-      try {
-        await _runAssistantTurn(
-          config: config,
-          protocolMessages: contextAssembly.sanitizedProtocolMessages,
-          placeholderId: placeholder.id,
-          retriesRemaining: _defaultTransientRetryCount,
-          toolsJson: _buildToolsJson(),
-          recoveryMode: AiChatRecoveryMode.continueGeneration,
-        );
-      } catch (error) {
-        _markDisplayMessageError(
-          placeholder.id,
-          _describeThrownError(error),
-          AiResponseIssue.networkError,
-        );
-      }
-    });
-  }
-
-  Future<void> retryLastTurn() async {
-    if (state.isStreaming || !state.hasUserMessages) {
-      return;
-    }
-
-    final lastUserMessage = state.messages.lastWhere(
-      (message) => message.role == 'user',
-    );
-    await retryByMessageId(lastUserMessage.id);
-  }
-
-  Future<bool> compactContext() async {
-    final config = ref.read(aiConfigProvider).value;
-    if (state.protocolMessages.isEmpty) {
-      return false;
-    }
-    final previousStats = state.contextStats;
-    _syncContextState(
-      protocolMessages: state.protocolMessages,
-      config: config,
-      forceCompact: true,
-      recoveryMode: state.sessionContext.taskState.lastRecoveryMode,
-    );
-    await _saveChatHistory();
-    return state.contextStats.didCompact || state.contextStats != previousStats;
-  }
-
-  @Deprecated('Use retryByMessageId instead.')
-  Future<void> retry(int index) async {
-    final visibleMessages = state.visibleMessages;
-    if (index < 0 || index >= visibleMessages.length) {
-      return;
-    }
-    await retryByMessageId(visibleMessages[index].id);
-  }
-
-  Future<void> deleteSession(String sessionId) async {
-    var deletedFromStandard = false;
-    try {
-      await _conversationMigrator.deleteSession(sessionId);
-      deletedFromStandard = true;
-    } catch (_) {
-      // The legacy store remains available as a last-resort fallback.
-    }
-    if (!deletedFromStandard) {
-      await ref
-          .read(aiChatActionRepositoryProvider)
-          .deleteSession(packageName, sessionId);
-    }
-
-    final updatedSessions = List<AiSession>.from(state.sessions)
-      ..removeWhere((session) => session.id == sessionId);
-
-    if (state.currentSessionId == sessionId) {
-      if (updatedSessions.isNotEmpty) {
-        state = state.copyWith(
-          sessions: List<AiSession>.unmodifiable(updatedSessions),
-        );
-        await switchSession(updatedSessions.first.id);
-      } else {
-        state = state.copyWith(
-          isStreaming: false,
-          messages: const [],
-          protocolMessages: const [],
-          sessions: const [],
-          currentSessionId: null,
-          sessionContext: AiChatSessionContext(
-            sessionRules: state.systemPrompt ?? '',
-          ),
-          contextStats: const AiChatContextStats(),
-          contextVersion: AiChatSessionContext.currentVersion,
-        );
-        await ref
-            .read(aiChatActionRepositoryProvider)
-            .clearLastActiveSessionId(packageName);
-      }
-    } else {
-      state = state.copyWith(
-        sessions: List<AiSession>.unmodifiable(updatedSessions),
-      );
-    }
-  }
-
-  void resetStreaming() {
-    _clearStreamingThinking();
-    state = state.copyWith(isStreaming: false);
-  }
-
-  Future<void> stopStreaming() async {
-    if (!state.isStreaming) {
-      return;
-    }
-
-    if (_standardSessionReady && _standardSessionController != null) {
-      _standardSessionController!.cancel();
-      return;
-    }
-
-    _stopRequested = true;
-    final partialContent = _latestStreamingContent;
-    final hasPendingToolPhase = state.sessionContext.hasPendingToolPhase;
-    // Immediately persist partial content so next turns won't lose it
-    var nextProtocolMessages = state.protocolMessages;
-    if (!hasPendingToolPhase && partialContent.isNotEmpty) {
-      _replaceLatestAssistantPlaceholder(
-        content: partialContent,
-        isError: false,
-      );
-      nextProtocolMessages = List<AiMessage>.unmodifiable([
-        ...state.protocolMessages,
-        AiMessage(
-          id: const Uuid().v4(),
-          role: 'assistant',
-          content: partialContent,
-          reasoningContent: _latestStreamingThinkingContent.trim().isNotEmpty
-              ? _latestStreamingThinkingContent.trim()
-              : null,
-        ),
-      ]);
-    } else if (!hasPendingToolPhase) {
-      _removeLatestAssistantPlaceholder();
-    }
-    state = state.copyWith(
-      protocolMessages: nextProtocolMessages,
-      isStreaming: false,
-      error: null,
-      lastResponseIssue: null,
-    );
-    _saveChatHistory(); // CRITICAL: Save to persisted storage immediately!
-    _activeRequestCancelToken?.cancel('user_stopped');
-    _activeRequestCancelToken = null;
-    _clearStreamingContent();
-    _clearStreamingThinking();
-    await _activeResponseSubscription?.cancel();
-    _activeResponseSubscription = null;
-
-    final completer = _activeResponseCompleter;
-    if (completer != null && !completer.isCompleted) {
-      completer.complete(
-        _CollectedAssistantResponse(content: partialContent, userStopped: true),
-      );
+    if (index < 0) return;
+    final required = state.messages.length - index;
+    if (required > state.visibleMessageCount) {
+      state = state.copyWith(visibleMessageCount: required);
     }
   }
 
@@ -1516,209 +698,69 @@ class AiChatAction extends _$AiChatAction {
     return ref.read(aiChatActionRepositoryProvider).testConnection(config);
   }
 
-  Future<void> deleteHistory() async {
-    if (state.currentSessionId != null) {
-      await deleteSession(state.currentSessionId!);
-    }
-  }
-
-  Future<void> clear() async {
-    await createSession('新对话 ${DateTime.now().hour}:${DateTime.now().minute}');
-  }
-
-  Future<void> _saveChatHistory() async {
-    final sessionId = state.currentSessionId;
-    if (sessionId == null) {
-      return;
-    }
-
-    try {
-      final config = ref.read(aiConfigProvider).value;
-      final session = state.sessions.firstWhere(
-        (item) => item.id == sessionId,
-        orElse: () => AiSession(
-          id: sessionId,
-          name: 'AI Chat',
-          packageName: packageName,
-          lastUpdateTime: DateTime.now(),
-          lastMessage: '',
-        ),
+  AiChatSessionController? _readyController({bool showError = true}) {
+    final controller = _sessionController;
+    if (_sessionReady && controller != null) return controller;
+    if (showError) {
+      state = state.copyWith(
+        error: '标准 AI 会话尚未就绪，请重试会话初始化。',
+        lastResponseIssue: AiResponseIssue.toolInitError,
       );
-      var savedToStandard = false;
-      if (config != null && _standardPersistenceAvailable) {
-        try {
-          await _conversationMigrator.saveLegacySession(
-            packageName: packageName,
-            session: session.copyWith(lastUpdateTime: DateTime.now()),
-            messages: state.protocolMessages,
-            config: config,
-          );
-          savedToStandard = true;
-        } catch (_) {
-          _standardPersistenceAvailable = false;
-        }
-      }
-
-      if (!savedToStandard) {
-        await ref
-            .read(aiChatActionRepositoryProvider)
-            .saveChatHistory(packageName, sessionId, state.protocolMessages);
-        await ref
-            .read(aiChatActionRepositoryProvider)
-            .saveSessionContext(packageName, sessionId, state.sessionContext);
-      }
-
-      final sessionIndex = state.sessions.indexWhere(
-        (session) => session.id == sessionId,
-      );
-      if (sessionIndex != -1) {
-        final updatedSessions = List<AiSession>.from(state.sessions);
-        updatedSessions[sessionIndex] = updatedSessions[sessionIndex].copyWith(
-          lastUpdateTime: DateTime.now(),
-          lastMessage: '',
-        );
-        // UI 层的列表更新可以异步，不阻塞当前微任务
-        Future.microtask(() {
-          state = state.copyWith(
-            sessions: List<AiSession>.unmodifiable(updatedSessions),
-          );
-        });
-
-        // The standard conversation repository owns message persistence. The
-        // legacy session index is only updated when migration is unavailable.
-        if (!_standardPersistenceAvailable) {
-          unawaited(
-            ref
-                .read(aiChatActionRepositoryProvider)
-                .saveSessions(packageName, updatedSessions),
-          );
-        }
-      }
-    } catch (_) {
-      // Keep UI responsive even if persistence fails.
     }
+    return null;
   }
-
-  LegacyAiConversationMigrator get _conversationMigrator =>
-      LegacyAiConversationMigrator(
-        queryRepository: ref.read(aiChatQueryRepositoryProvider),
-        catalogRepository: ref.read(aiCatalogRepositoryProvider),
-        conversationRepository: ref.read(aiConversationRepositoryV2Provider),
-      );
 
   Future<void> _migrateLegacySessions(AiConfig config) async {
     if (_migratedPackages.contains(packageName)) return;
     await ref.read(aiSystemMigrationProvider.future);
-    await _conversationMigrator.migratePackage(
-      packageName: packageName,
-      config: config,
-    );
-    _standardPersistenceAvailable = true;
+    await LegacyAiConversationMigrator(
+      queryRepository: ref.read(aiChatQueryRepositoryProvider),
+      catalogRepository: ref.read(aiCatalogRepositoryProvider),
+      conversationRepository: ref.read(aiConversationRepositoryV2Provider),
+    ).migratePackage(packageName: packageName, config: config);
     _migratedPackages.add(packageName);
   }
 
-  Future<List<AiSession>> _getStandardSessions() async {
-    await ref.read(aiSystemMigrationProvider.future);
-    final repository = ref.read(aiConversationRepositoryV2Provider);
-    final conversations = <standard.AiConversation>[];
-    AiConversationCursor? cursor;
-    while (true) {
-      final page = await repository.getConversations(
-        before: cursor,
-        limit: 200,
-      );
-      conversations.addAll(page);
-      if (page.length < 200) break;
-      final oldest = page.last;
-      cursor = AiConversationCursor(updatedAt: oldest.updatedAt, id: oldest.id);
-    }
-    return conversations
-        .where((conversation) => conversation.scopeId == packageName)
-        .map(
-          (conversation) => AiSession(
-            id: conversation.id,
-            name: conversation.title,
-            packageName: packageName,
-            lastUpdateTime: conversation.updatedAt.toLocal(),
-            lastMessage: '',
-          ),
-        )
-        .toList(growable: false);
-  }
+  List<AiMessage> _displayMessages(List<AiMessage> protocol) {
+    final display = <AiMessage>[];
+    final calls = <String, AiToolCall>{};
+    final order = <String>[];
 
-  Future<List<AiMessage>> _readStandardMessages(String sessionId) async {
-    final conversation = await ref
-        .read(aiConversationRepositoryV2Provider)
-        .getConversation(sessionId);
-    if (conversation == null || conversation.scopeId != packageName) {
-      return const [];
-    }
-    return _conversationMigrator.readMessages(sessionId);
-  }
-
-  List<AiMessage> _buildDisplayMessagesFromProtocol(
-    List<AiMessage> protocolMessages,
-  ) {
-    final displayMessages = <AiMessage>[];
-    final pendingToolCalls = <String, AiToolCall>{};
-    final pendingToolOrder = <String>[];
-    final shouldHidePreToolDisplay = _shouldHidePreToolDisplayContent();
-
-    void flushPendingToolCalls() {
-      for (final toolCallId in pendingToolOrder) {
-        final call = pendingToolCalls[toolCallId];
-        if (call == null) {
-          continue;
-        }
-        displayMessages.add(
+    void flushPending() {
+      for (final id in order) {
+        final call = calls[id];
+        if (call == null) continue;
+        display.add(
           AiMessage(
-            id: 'tool-pending-$toolCallId',
+            id: 'tool-pending-$id',
             role: 'assistant',
             content: '⏳ `${call.name}`:',
             isToolResultBubble: true,
           ),
         );
       }
-      pendingToolCalls.clear();
-      pendingToolOrder.clear();
+      calls.clear();
+      order.clear();
     }
 
-    for (final message in protocolMessages) {
-      if (_isSessionSummary(message)) {
-        continue;
-      }
-
+    for (final message in protocol) {
+      if (message.isSessionSummary) continue;
       if (message.role == 'assistant' && message.hasToolCalls) {
-        flushPendingToolCalls();
-        final toolCalls =
-            message.toolCalls
-                ?.map(AiToolCall.fromJson)
-                .where((call) => call.id.isNotEmpty)
-                .toList(growable: false) ??
-            const <AiToolCall>[];
-        if (!shouldHidePreToolDisplay) {
-          final assistantDisplayMessage = _buildAssistantDisplayMessage(
-            message,
-          );
-          if (assistantDisplayMessage.content.trim().isNotEmpty) {
-            displayMessages.add(assistantDisplayMessage);
-          }
-        }
-        for (final call in toolCalls) {
-          pendingToolCalls[call.id] = call;
-          pendingToolOrder.add(call.id);
+        flushPending();
+        for (final raw in message.toolCalls ?? const []) {
+          final call = AiToolCall.fromJson(raw);
+          if (call.id.isEmpty) continue;
+          calls[call.id] = call;
+          order.add(call.id);
         }
         continue;
       }
-
       if (message.role == 'tool') {
-        final toolCallId = message.toolCallId;
-        final call = toolCallId == null
-            ? null
-            : pendingToolCalls.remove(toolCallId);
+        final id = message.toolCallId;
+        final call = id == null ? null : calls.remove(id);
         if (call != null) {
-          pendingToolOrder.remove(toolCallId);
-          displayMessages.add(
+          order.remove(id);
+          display.add(
             AiMessage(
               id: 'tool-result-${message.id}',
               role: 'assistant',
@@ -1730,1376 +772,56 @@ class AiChatAction extends _$AiChatAction {
         }
         continue;
       }
-
-      flushPendingToolCalls();
-      if (message.shouldDisplayInChatList) {
-        displayMessages.add(_buildAssistantDisplayMessage(message));
-      }
-    }
-
-    flushPendingToolCalls();
-    return List<AiMessage>.unmodifiable(displayMessages);
-  }
-
-  AiMessage _buildAssistantDisplayMessage(AiMessage message) {
-    if (message.role != 'assistant' ||
-        (message.reasoningContent?.trim().isEmpty ?? true)) {
-      return message;
-    }
-    return message.copyWith(
-      content: _composeDisplayContent(
-        thinkingContent: message.reasoningContent!,
-        answerContent: message.content,
-      ),
-    );
-  }
-
-  Future<void> _beginUserTurn({
-    required AiConfig config,
-    required AiMessage userMessage,
-    required List<AiMessage> baseProtocolMessages,
-    required int retriesRemaining,
-    required AiChatRecoveryMode recoveryMode,
-  }) async {
-    final placeholder = AiMessage(
-      id: const Uuid().v4(),
-      role: 'assistant',
-      content: '',
-    );
-    final protocolMessages = [...baseProtocolMessages, userMessage];
-    // 1. 同步更新 UI：显示消息和加载状态，确保 0 延迟反馈
-    state = state.copyWith(
-      protocolMessages: List<AiMessage>.unmodifiable(protocolMessages),
-      messages: List<AiMessage>.unmodifiable([
-        ..._buildDisplayMessagesFromProtocol(protocolMessages),
-        placeholder,
-      ]),
-      isStreaming: true,
-      error: null,
-      lastResponseIssue: null,
-    );
-
-    // 2. 将繁重的计算和 IO 任务彻底移出当前帧
-    Future<void>.microtask(() async {
-      try {
-        // 耗时的 Token 计算和拼装
-        final contextAssembly = _assembleContext(
-          protocolMessages: protocolMessages,
-          previousContext: state.sessionContext,
-          config: config,
-          recoveryMode: recoveryMode,
-        );
-
-        final checkpoint = AiChatCheckpoint(
-          createdAtIso: DateTime.now().toIso8601String(),
-          lastUserMessage: userMessage,
-          protocolMessages: contextAssembly.sanitizedProtocolMessages,
-          sessionMemorySnapshot: contextAssembly.context.sessionMemory,
-          taskStateSnapshot: contextAssembly.context.taskState,
-          toolTraceSnapshot: contextAssembly.context.toolTrace,
-          recoveryMode: recoveryMode,
-        );
-
-        // 更新最终状态：同步上下文、版本和统计数据
-        state = state.copyWith(
-          sessionContext: contextAssembly.context.copyWith(
-            checkpoint: checkpoint,
+      flushPending();
+      if (!message.shouldDisplayInChatList) continue;
+      if (message.role == 'assistant' &&
+          message.reasoningContent?.trim().isNotEmpty == true) {
+        display.add(
+          message.copyWith(
+            content: _displayContent(
+              message.reasoningContent!,
+              message.content,
+            ),
           ),
-          contextStats: contextAssembly.context.stats,
-          contextVersion: contextAssembly.context.version,
         );
-
-        await _saveChatHistory();
-
-        _latestStreamingContent = '';
-        await _runAssistantTurn(
-          config: config,
-          protocolMessages: contextAssembly.sanitizedProtocolMessages,
-          placeholderId: placeholder.id,
-          toolsJson: _buildToolsJson(),
-          retriesRemaining: retriesRemaining,
-          recoveryMode: recoveryMode,
-        );
-      } catch (error) {
-        _markDisplayMessageError(
-          placeholder.id,
-          '发送失败：${_describeThrownError(error)}',
-          AiResponseIssue.networkError,
-        );
-      }
-    });
-  }
-
-  Future<List<AiMessage>> _prepareProtocolMessages(
-    List<AiMessage> protocolMessages,
-    AiConfig config, {
-    bool forceCompact = false,
-  }) async {
-    final sanitizedMessages = _sanitizeProtocolMessages(protocolMessages);
-    final shouldCompact =
-        forceCompact ||
-        _estimateProtocolSize(sanitizedMessages) > _contextHardBudgetChars;
-    if (!shouldCompact) {
-      if (!_sameMessages(protocolMessages, sanitizedMessages)) {
-        state = state.copyWith(
-          protocolMessages: List<AiMessage>.unmodifiable(sanitizedMessages),
-        );
-        await _saveChatHistory();
-      }
-      return sanitizedMessages;
-    }
-
-    final compactedMessages = _compactProtocolMessages(sanitizedMessages);
-    if (_sameMessages(protocolMessages, compactedMessages)) {
-      return compactedMessages;
-    }
-
-    state = state.copyWith(
-      protocolMessages: List<AiMessage>.unmodifiable(compactedMessages),
-    );
-    await _saveChatHistory();
-    return compactedMessages;
-  }
-
-  List<AiMessage> _sanitizeProtocolMessages(List<AiMessage> protocolMessages) {
-    final latestSummary = _findLatestSessionSummary(protocolMessages);
-    final sanitized = <AiMessage>[if (latestSummary != null) latestSummary];
-    final pendingToolCallIds = <String>{};
-    var awaitingToolResults = false;
-
-    for (final message in protocolMessages) {
-      if (_isSessionSummary(message)) {
-        continue;
-      }
-      if (message.role == 'assistant') {
-        pendingToolCallIds
-          ..clear()
-          ..addAll(_extractToolCallIds(message.toolCalls));
-        awaitingToolResults = message.hasToolCalls;
-        sanitized.add(message);
-        continue;
-      }
-      if (message.role == 'tool') {
-        if (!awaitingToolResults) {
-          continue;
-        }
-        final toolCallId = message.toolCallId;
-        if (pendingToolCallIds.isNotEmpty) {
-          if (toolCallId == null || !pendingToolCallIds.remove(toolCallId)) {
-            continue;
-          }
-          if (pendingToolCallIds.isEmpty) {
-            awaitingToolResults = false;
-          }
-        }
-        sanitized.add(message);
       } else {
-        pendingToolCallIds.clear();
-        awaitingToolResults = false;
-        sanitized.add(message);
+        display.add(message);
       }
     }
-    return List<AiMessage>.unmodifiable(sanitized);
+    flushPending();
+    return display;
   }
 
-  List<AiMessage> _compactProtocolMessages(List<AiMessage> protocolMessages) {
-    final latestSummary = _findLatestSessionSummary(protocolMessages);
-    final workingMessages = protocolMessages
-        .where((message) => !_isSessionSummary(message))
-        .toList(growable: false);
-    if (workingMessages.isEmpty) {
-      return latestSummary == null ? workingMessages : [latestSummary];
-    }
-
-    final protectedStartIndex = _findLastUserMessageIndex(workingMessages);
-    if (protectedStartIndex <= 0) {
-      return List<AiMessage>.unmodifiable([
-        if (latestSummary != null) latestSummary,
-        ...workingMessages,
-      ]);
-    }
-
-    final olderMessages = workingMessages.sublist(0, protectedStartIndex);
-    if (olderMessages.isEmpty) {
-      return List<AiMessage>.unmodifiable([
-        if (latestSummary != null) latestSummary,
-        ...workingMessages,
-      ]);
-    }
-    final protectedMessages = workingMessages.sublist(protectedStartIndex);
-
-    final mergedSummary = _mergeSessionSummary(
-      existingSummary: latestSummary?.content,
-      olderMessages: olderMessages,
-    );
-    final compacted = <AiMessage>[
-      AiMessage(
-        id: latestSummary?.id ?? const Uuid().v4(),
-        role: 'system',
-        content: mergedSummary,
-      ),
-      ...protectedMessages,
-    ];
-
-    return List<AiMessage>.unmodifiable(compacted);
+  String _displayContent(String reasoning, String answer) {
+    return AiThinkingMarkup.compose(thinking: reasoning, answer: answer);
   }
 
-  int _findLastUserMessageIndex(List<AiMessage> protocolMessages) {
-    for (var index = protocolMessages.length - 1; index >= 0; index--) {
-      if (protocolMessages[index].role == 'user') {
-        return index;
-      }
+  void _pushStreaming(String content) {
+    if (!_streamingContentController.isClosed) {
+      _streamingContentController.add(content);
     }
-    return -1;
   }
 
-  List<AiMessage> _selectRecentMessagesForCompaction(
-    List<AiMessage> protocolMessages,
-  ) {
-    var userRounds = 0;
-    var startIndex = 0;
-    for (var index = protocolMessages.length - 1; index >= 0; index--) {
-      if (protocolMessages[index].role == 'user') {
-        userRounds++;
-        if (userRounds >= _recentUserRoundsToKeep) {
-          startIndex = index;
-          break;
-        }
-      }
+  void _pushThinking(bool value) {
+    if (!_streamingThinkingController.isClosed) {
+      _streamingThinkingController.add(value);
     }
-    return List<AiMessage>.from(protocolMessages.sublist(startIndex));
   }
 
-  String _mergeSessionSummary({
-    String? existingSummary,
-    required List<AiMessage> olderMessages,
-  }) {
-    final sections = _parseSessionSummarySections(existingSummary);
-    final pendingNotes = <String>[];
-
-    for (final message in olderMessages) {
-      final summaryContent = _summaryContent(message);
-      if (summaryContent.trim().isEmpty) {
-        continue;
-      }
-      final normalized = _truncateForSummary(
-        summaryContent.replaceAll('\r', ' ').replaceAll('\n', ' ').trim(),
-      );
-      if (normalized.isEmpty) {
-        continue;
-      }
-      if (message.role == 'user') {
-        _addUniqueNote(sections.userNeeds, normalized);
-        if (_looksLikeQuestion(normalized)) {
-          _addUniqueNote(pendingNotes, normalized);
-        }
-      } else if (message.role == 'tool') {
-        _addUniqueNote(sections.toolFindings, normalized);
-      } else if (message.role == 'assistant' && !message.hasToolCalls) {
-        _addUniqueNote(sections.knownConclusions, normalized);
-      }
-    }
-
-    final buffer = StringBuffer(_sessionSummaryPrefix);
-    _writeSummarySection(
-      buffer,
-      title: '历史诉求',
-      notes: sections.userNeeds.take(6),
-    );
-    _writeSummarySection(
-      buffer,
-      title: '已知结论',
-      notes: sections.knownConclusions.take(6),
-    );
-    _writeSummarySection(
-      buffer,
-      title: '工具发现',
-      notes: sections.toolFindings.take(8),
-    );
-
-    final unresolved = pendingNotes.where(
-      (note) =>
-          !sections.knownConclusions.any((item) => item.contains(note)) &&
-          !sections.toolFindings.any((item) => item.contains(note)),
-    );
-    for (final note in unresolved.take(4)) {
-      _addUniqueNote(sections.nextSteps, note);
-    }
-    _writeSummarySection(
-      buffer,
-      title: '待继续',
-      notes: sections.nextSteps.take(4),
-    );
-    return buffer.toString().trim();
-  }
-
-  int _estimateProtocolSize(List<AiMessage> messages) {
-    var total = state.systemPrompt?.length ?? 0;
-    for (final message in messages) {
-      total += message.role.length;
-      total += message.content.length;
-      if (message.toolCalls != null) {
-        total += message.toolCalls.toString().length;
-      }
-    }
-    return total;
-  }
-
-  AiMessage? _findLatestSessionSummary(List<AiMessage> messages) {
-    for (var index = messages.length - 1; index >= 0; index--) {
-      if (_isSessionSummary(messages[index])) {
-        return messages[index];
-      }
-    }
-    return null;
-  }
-
-  bool _isSessionSummary(AiMessage message) {
-    return message.role == 'system' &&
-        message.content.startsWith(_sessionSummaryPrefix);
-  }
-
-  String _stripSessionSummaryPrefix(String content) {
-    return content.replaceFirst(_sessionSummaryPrefix, '').trim();
-  }
-
-  String _truncateForSummary(String text) {
-    if (text.length <= 180) {
-      return text;
-    }
-    return '${text.substring(0, 180)}...';
-  }
-
-  String _summaryContent(AiMessage message) {
-    if (message.role != 'user') {
-      return message.content;
-    }
-    return AiMultimodalMessageCodec.toSemanticText(message.content, isZh: true);
-  }
-
-  String _buildContinuationPrompt(String partialContent) {
-    return '你上一条回答因为网络中断未完成。请从中断处继续，不要重复已经输出的内容。'
-        '如果必须衔接，请只补充后续部分。\n\n'
-        '已输出内容如下：\n$partialContent';
-  }
-
-  Future<void> _retryAssistantTurn({
-    required AiConfig config,
-    required List<AiMessage> protocolMessages,
-    required String placeholderId,
-    required int retriesRemaining,
-    required AiChatRecoveryMode recoveryMode,
-    List<Map<String, dynamic>>? toolsJson,
-    String? interimContent,
-  }) async {
-    if (interimContent != null && interimContent.trim().isNotEmpty) {
-      _updateDisplayMessage(
-        placeholderId,
-        content: interimContent,
-        isError: false,
-      );
-    }
-    await _delayBeforeTransientRetry(retriesRemaining);
-    if (_isDisposed || _stopRequested) {
-      return;
-    }
-    await _runAssistantTurn(
-      config: config,
-      protocolMessages: protocolMessages,
-      placeholderId: placeholderId,
-      retriesRemaining: retriesRemaining - 1,
-      toolsJson: toolsJson,
-      recoveryMode: recoveryMode,
-    );
-  }
-
-  Future<bool> _tryAutoRecoverPartialResponse({
-    required AiConfig config,
-    required List<AiMessage> protocolMessages,
-    required String placeholderId,
-    required int retriesRemaining,
-    required AiChatRecoveryMode recoveryMode,
-    required String partialAnswerContent,
-    required String partialDisplayContent,
-    List<Map<String, dynamic>>? toolsJson,
-  }) async {
-    final trimmedAnswer = partialAnswerContent.trim();
-    if (trimmedAnswer.isEmpty || state.sessionContext.hasPendingToolPhase) {
-      await _retryAssistantTurn(
-        config: config,
-        protocolMessages: protocolMessages,
-        placeholderId: placeholderId,
-        retriesRemaining: retriesRemaining,
-        toolsJson: toolsJson,
-        recoveryMode: recoveryMode,
-        interimContent: partialDisplayContent,
-      );
-      return true;
-    }
-
-    final checkpoint = state.sessionContext.checkpoint;
-    if (checkpoint == null || checkpoint.lastUserMessage == null) {
-      await _retryAssistantTurn(
-        config: config,
-        protocolMessages: protocolMessages,
-        placeholderId: placeholderId,
-        retriesRemaining: retriesRemaining,
-        toolsJson: toolsJson,
-        recoveryMode: recoveryMode,
-        interimContent: partialDisplayContent,
-      );
-      return true;
-    }
-
-    final continuationProtocolMessages = List<AiMessage>.from(
-      checkpoint.protocolMessages,
-    );
-    final lastUserIndex = continuationProtocolMessages.lastIndexWhere(
-      (message) => message.id == checkpoint.lastUserMessage!.id,
-    );
-    if (lastUserIndex == -1) {
-      await _retryAssistantTurn(
-        config: config,
-        protocolMessages: protocolMessages,
-        placeholderId: placeholderId,
-        retriesRemaining: retriesRemaining,
-        toolsJson: toolsJson,
-        recoveryMode: recoveryMode,
-        interimContent: partialDisplayContent,
-      );
-      return true;
-    }
-
-    continuationProtocolMessages[lastUserIndex] =
-        continuationProtocolMessages[lastUserIndex].copyWith(
-          content: AiMultimodalMessageCodec.appendUserText(
-            continuationProtocolMessages[lastUserIndex].content,
-            _buildContinuationPrompt(trimmedAnswer),
-          ),
-        );
-
-    final contextAssembly = _assembleContext(
-      protocolMessages: continuationProtocolMessages,
-      previousContext: state.sessionContext,
-      config: config,
-      recoveryMode: AiChatRecoveryMode.continueGeneration,
-    );
-    final checkpointForContinuation = checkpoint.copyWith(
-      protocolMessages: contextAssembly.sanitizedProtocolMessages,
-      recoveryMode: AiChatRecoveryMode.continueGeneration,
-    );
-
-    final updatedMessages = List<AiMessage>.from(state.messages);
-    final placeholderIndex = updatedMessages.indexWhere(
-      (message) => message.id == placeholderId,
-    );
-    if (placeholderIndex == -1) {
-      await _retryAssistantTurn(
-        config: config,
-        protocolMessages: protocolMessages,
-        placeholderId: placeholderId,
-        retriesRemaining: retriesRemaining,
-        toolsJson: toolsJson,
-        recoveryMode: recoveryMode,
-        interimContent: partialDisplayContent,
-      );
-      return true;
-    }
-
-    updatedMessages[placeholderIndex] = updatedMessages[placeholderIndex]
-        .copyWith(content: partialDisplayContent, isError: false);
-    final continuationPlaceholder = AiMessage(
-      id: const Uuid().v4(),
-      role: 'assistant',
-      content: '',
-    );
-    updatedMessages.add(continuationPlaceholder);
-
-    state = state.copyWith(
-      messages: List<AiMessage>.unmodifiable(updatedMessages),
-      protocolMessages: List<AiMessage>.unmodifiable(
-        contextAssembly.sanitizedProtocolMessages,
-      ),
-      isStreaming: true,
-      error: null,
-      lastResponseIssue: null,
-      sessionContext: contextAssembly.context.copyWith(
-        checkpoint: checkpointForContinuation,
-      ),
-      contextStats: contextAssembly.context.stats,
-      contextVersion: contextAssembly.context.version,
-    );
-    await _saveChatHistory();
-    await _delayBeforeTransientRetry(retriesRemaining);
-    if (_isDisposed || _stopRequested) {
-      return true;
-    }
-    await _runAssistantTurn(
-      config: config,
-      protocolMessages: contextAssembly.sanitizedProtocolMessages,
-      placeholderId: continuationPlaceholder.id,
-      retriesRemaining: retriesRemaining - 1,
-      toolsJson: toolsJson,
-      recoveryMode: AiChatRecoveryMode.continueGeneration,
-    );
-    return true;
-  }
-
-  Future<void> _delayBeforeTransientRetry(int retriesRemaining) {
-    final retryIndex = (_defaultTransientRetryCount - retriesRemaining + 1)
-        .clamp(1, _defaultTransientRetryCount + 1);
-    final delayCandidate = _transientRetryBaseDelay * retryIndex;
-    final delay = delayCandidate.compareTo(_transientRetryMaxDelay) > 0
-        ? _transientRetryMaxDelay
-        : delayCandidate;
-    return Future<void>.delayed(delay);
-  }
-
-  List<String> _extractToolCallIds(List<Map<String, dynamic>>? toolCalls) {
-    if (toolCalls == null || toolCalls.isEmpty) {
-      return const [];
-    }
-    return toolCalls
-        .map((toolCall) => toolCall['id']?.toString() ?? '')
-        .where((id) => id.isNotEmpty)
-        .toList(growable: false);
-  }
-
-  bool _endsWithToolContext(List<AiMessage> protocolMessages) {
-    for (var index = protocolMessages.length - 1; index >= 0; index--) {
-      final message = protocolMessages[index];
-      if (message.role == 'tool') {
-        return true;
-      }
-      if (message.role == 'assistant' && message.hasToolCalls) {
-        return true;
-      }
-      if (message.role == 'assistant' || message.role == 'user') {
-        return false;
-      }
-    }
-    return false;
-  }
-
-  List<AiMessage> _buildContinuationProtocolMessages(
-    List<AiMessage> protocolMessages,
-    String partialContent,
-  ) {
-    if (_endsWithToolContext(protocolMessages)) {
-      return protocolMessages;
-    }
-
-    final updatedMessages = List<AiMessage>.from(protocolMessages);
-    for (var index = updatedMessages.length - 1; index >= 0; index--) {
-      final candidate = updatedMessages[index];
-      if (candidate.role != 'user') {
-        continue;
-      }
-      updatedMessages[index] = candidate.copyWith(
-        content: AiMultimodalMessageCodec.appendUserText(
-          candidate.content,
-          _buildContinuationPrompt(partialContent),
-        ),
-      );
-      return List<AiMessage>.unmodifiable(updatedMessages);
-    }
-    return List<AiMessage>.unmodifiable(updatedMessages);
-  }
-
-  String _describePlatformException(PlatformException error) {
-    final message = error.message?.trim();
-    final details = error.details;
-    final combinedText = [
-      if (message != null && message.isNotEmpty) message,
-      if (details != null) details.toString(),
-    ].join('\n');
-    if (_isVisionUnsupportedErrorText(combinedText)) {
-      return '当前模型不支持图片理解，请切换到支持视觉的模型后再发送图片。';
-    }
-    if (details == null) {
-      return message == null || message.isEmpty ? error.code : message;
-    }
-
-    String detailText;
-    if (details is String) {
-      detailText = details.trim();
-    } else {
-      detailText = details.toString().trim();
-    }
-
-    if (detailText.isEmpty) {
-      return message == null || message.isEmpty ? error.code : message;
-    }
-    if (message == null || message.isEmpty) {
-      return detailText;
-    }
-    return '$message\n$detailText';
-  }
-
-  bool _isUserCancelledToolResult(String content) {
-    final normalized = content.trim().toLowerCase();
-    if (normalized.isEmpty) {
-      return false;
-    }
-    return normalized == '用户取消了当前操作。' ||
-        normalized.startsWith('已取消') ||
-        normalized == 'user cancelled the current action.' ||
-        normalized.contains('cancelled.') ||
-        normalized.contains('cancelled by user');
-  }
-
-  bool _isVisionUnsupportedErrorText(String text) {
-    final normalized = text.toLowerCase();
-    return normalized.contains('not a vlm') ||
-        normalized.contains('vision language model') ||
-        normalized.contains('text-only prompts') ||
-        normalized.contains('does not support image') ||
-        normalized.contains('model does not support vision') ||
-        normalized.contains('image input is not enabled') ||
-        normalized.contains('multimodal') && normalized.contains('not support');
-  }
-
-  bool _isRetryableCollectedIssue(_CollectedAssistantResponse response) {
-    if (response.userStopped) {
-      return false;
-    }
-    if (response.issue == AiResponseIssue.emptyResponse ||
-        response.issue == AiResponseIssue.partialResponse) {
-      return true;
-    }
-    if (response.issue != AiResponseIssue.networkError) {
-      return false;
-    }
-    if (response.retryableIssue) {
-      return true;
-    }
-    final message = response.errorMessage?.trim();
-    if (message == null || message.isEmpty) {
-      return true;
-    }
-    return _looksRetryableNetworkErrorText(message);
-  }
-
-  bool _isRetryablePlatformException(PlatformException error) {
-    if (_classifyPlatformIssue(error) != AiResponseIssue.networkError) {
-      return false;
-    }
-    final combinedText = [
-      error.code,
-      error.message,
-      if (error.details != null) error.details.toString(),
-    ].join('\n');
-    return _looksRetryableNetworkErrorText(combinedText);
-  }
-
-  bool _looksRetryableNetworkErrorText(String text) {
-    final normalized = text.toLowerCase();
-    if (normalized.isEmpty) {
-      return true;
-    }
-    if (_looksPermanentRequestFailureText(normalized)) {
-      return false;
-    }
-    if (normalized.contains('timeout') ||
-        normalized.contains('timed out') ||
-        normalized.contains('connection') ||
-        normalized.contains('reset') ||
-        normalized.contains('closed') ||
-        normalized.contains('broken pipe') ||
-        normalized.contains('socket') ||
-        normalized.contains('eof') ||
-        normalized.contains('stream') ||
-        normalized.contains('network') ||
-        normalized.contains('gateway') ||
-        normalized.contains('proxy') ||
-        normalized.contains('dns') ||
-        normalized.contains('temporarily unavailable') ||
-        normalized.contains('service unavailable') ||
-        normalized.contains('bad gateway') ||
-        normalized.contains('502') ||
-        normalized.contains('503') ||
-        normalized.contains('504') ||
-        normalized.contains('429') ||
-        normalized.contains('rate limit') ||
-        normalized.contains('too many requests') ||
-        normalized.contains('unavailable') ||
-        normalized.contains('aborted') ||
-        normalized.contains('interrupted') ||
-        normalized.contains('unexpected end')) {
-      return true;
-    }
-    return true;
-  }
-
-  bool _looksPermanentRequestFailureText(String text) {
-    return text.contains('invalid api key') ||
-        text.contains('api key') && text.contains('invalid') ||
-        text.contains('unauthorized') ||
-        text.contains('forbidden') ||
-        text.contains('authentication') && text.contains('failed') ||
-        text.contains('鉴权失败') ||
-        text.contains('认证失败') ||
-        text.contains('insufficient_quota') ||
-        text.contains('quota exceeded') ||
-        text.contains('billing') ||
-        text.contains('余额不足') ||
-        text.contains('model_not_found') ||
-        text.contains('model not found') ||
-        text.contains('invalid request') ||
-        text.contains('unsupported media type') ||
-        text.contains('status code 400') ||
-        text.contains('status code 401') ||
-        text.contains('status code 403') ||
-        text.contains('status code 404') ||
-        text.contains('status code 422');
+  void _clearStreaming() {
+    _pushStreaming('');
+    _pushThinking(false);
   }
 
   bool _looksExplicitlyTextOnlyModel(String modelName) {
     final normalized = modelName.toLowerCase();
-    return normalized.contains('embedding') ||
+    if (normalized.isEmpty) return false;
+    return normalized.contains('text-embedding') ||
+        normalized.contains('embedding') ||
         normalized.contains('rerank') ||
-        normalized.contains('bge') ||
-        normalized.contains('instruct') ||
-        normalized.contains('text-') ||
-        normalized.contains('coder') ||
-        normalized.contains('claude-2') ||
-        normalized.contains('claude-instant');
+        normalized.contains('whisper') ||
+        normalized.contains('tts');
   }
-
-  String _mergeContinuationContent(String existing, String continuation) {
-    final previous = existing.trimRight();
-    final next = continuation.trimLeft();
-    if (next.isEmpty) {
-      return previous;
-    }
-    if (previous.isEmpty) {
-      return next;
-    }
-    if (next.startsWith(previous)) {
-      return next;
-    }
-
-    final maxOverlap = previous.length < next.length
-        ? previous.length
-        : next.length;
-    for (var overlap = maxOverlap; overlap >= 8; overlap--) {
-      final previousSuffix = previous.substring(previous.length - overlap);
-      final nextPrefix = next.substring(0, overlap);
-      if (previousSuffix == nextPrefix) {
-        return '$previous${next.substring(overlap)}';
-      }
-    }
-
-    return '$previous$next';
-  }
-
-  _SessionSummarySections _parseSessionSummarySections(String? summary) {
-    final sections = _SessionSummarySections();
-    if (summary == null || summary.isEmpty) {
-      return sections;
-    }
-
-    String? currentTitle;
-    final lines = _stripSessionSummaryPrefix(
-      summary,
-    ).split('\n').map((line) => line.trim()).where((line) => line.isNotEmpty);
-
-    for (final line in lines) {
-      if (line.endsWith('：')) {
-        currentTitle = line.substring(0, line.length - 1);
-        continue;
-      }
-      if (!line.startsWith('- ')) {
-        continue;
-      }
-      final note = line.substring(2).trim();
-      if (note.isEmpty) {
-        continue;
-      }
-
-      switch (currentTitle) {
-        case '历史诉求':
-          _addUniqueNote(sections.userNeeds, note);
-          break;
-        case '已知结论':
-          _addUniqueNote(sections.knownConclusions, note);
-          break;
-        case '工具发现':
-          _addUniqueNote(sections.toolFindings, note);
-          break;
-        case '待继续':
-          _addUniqueNote(sections.nextSteps, note);
-          break;
-        default:
-          _addUniqueNote(sections.knownConclusions, note);
-          break;
-      }
-    }
-
-    return sections;
-  }
-
-  void _writeSummarySection(
-    StringBuffer buffer, {
-    required String title,
-    required Iterable<String> notes,
-  }) {
-    final items = notes
-        .map((note) => note.trim())
-        .where((note) => note.isNotEmpty)
-        .toList(growable: false);
-    if (items.isEmpty) {
-      return;
-    }
-
-    buffer
-      ..writeln()
-      ..writeln('$title：');
-    for (final note in items) {
-      buffer.writeln('- $note');
-    }
-  }
-
-  void _addUniqueNote(List<String> notes, String value) {
-    final normalized = value.trim();
-    if (normalized.isEmpty) {
-      return;
-    }
-    if (notes.any((item) => item == normalized)) {
-      return;
-    }
-    notes.add(normalized);
-  }
-
-  bool _looksLikeQuestion(String text) {
-    return text.contains('?') ||
-        text.contains('？') ||
-        text.startsWith('请') ||
-        text.startsWith('分析') ||
-        text.startsWith('找') ||
-        text.startsWith('定位');
-  }
-
-  bool _sameMessages(List<AiMessage> left, List<AiMessage> right) {
-    if (left.length != right.length) {
-      return false;
-    }
-    for (var index = 0; index < left.length; index++) {
-      final a = left[index];
-      final b = right[index];
-      if (a.role != b.role ||
-          a.content != b.content ||
-          a.isError != b.isError ||
-          a.toolCallId != b.toolCallId ||
-          a.isToolResultBubble != b.isToolResultBubble) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  AiMessage? _findLastUserMessage(List<AiMessage> messages) {
-    for (var index = messages.length - 1; index >= 0; index--) {
-      final message = messages[index];
-      if (message.role == 'user') {
-        return message;
-      }
-    }
-    return null;
-  }
-
-  AiChatToolExecutorContract? _getToolExecutor() {
-    return state.toolExecutor;
-  }
-
-  bool _shouldHidePreToolDisplayContent() {
-    return packageName.startsWith('memory_overlay_');
-  }
-
-  bool _isCriticalTool(String toolName) {
-    return const {'get_manifest'}.contains(toolName);
-  }
-
-  void _finishAssistantMessage(
-    String placeholderId,
-    String content, {
-    required List<AiMessage> protocolMessages,
-  }) {
-    _updateDisplayMessage(placeholderId, content: content, isError: false);
-    final config = ref.read(aiConfigProvider).value;
-    state = state.copyWith(
-      protocolMessages: List<AiMessage>.unmodifiable(protocolMessages),
-      isStreaming: false,
-      error: null,
-      lastResponseIssue: null,
-    );
-    _syncContextState(
-      protocolMessages: protocolMessages,
-      config: config,
-      lastError: null,
-      recoveryMode: AiChatRecoveryMode.none,
-    );
-    _saveChatHistory();
-  }
-
-  List<AiMessage> _buildResponsesReasoningProtocolMessages(
-    List<String> reasoningItems,
-  ) {
-    return reasoningItems
-        .where(OpenAiResponsesReasoningItemCodec.isEncoded)
-        .map(
-          (content) => AiMessage(
-            id: const Uuid().v4(),
-            role: 'system',
-            content: content,
-          ),
-        )
-        .toList(growable: false);
-  }
-
-  String? _normalizeReasoningContentForProtocol({
-    required List<String> reasoningItems,
-    required String thinkingContent,
-  }) {
-    if (reasoningItems.isNotEmpty) {
-      return null;
-    }
-    final normalized = thinkingContent.trim();
-    if (normalized.isEmpty) {
-      return null;
-    }
-    return normalized;
-  }
-
-  void _markDisplayMessageError(
-    String placeholderId,
-    String message,
-    AiResponseIssue issue,
-  ) {
-    _updateDisplayMessage(placeholderId, content: message, isError: true);
-    final config = ref.read(aiConfigProvider).value;
-    _clearStreamingThinking();
-    state = state.copyWith(
-      isStreaming: false,
-      error: message,
-      lastResponseIssue: issue,
-    );
-    _syncContextState(
-      protocolMessages: state.protocolMessages,
-      config: config,
-      lastError: message,
-      recoveryMode: state.sessionContext.taskState.lastRecoveryMode,
-    );
-    _saveChatHistory();
-  }
-
-  void _appendDisplayMessage(AiMessage message) {
-    state = state.copyWith(
-      messages: List<AiMessage>.unmodifiable([...state.messages, message]),
-    );
-  }
-
-  void _removeDisplayMessage(String messageId) {
-    final updatedMessages = List<AiMessage>.from(state.messages)
-      ..removeWhere((message) => message.id == messageId);
-    state = state.copyWith(
-      messages: List<AiMessage>.unmodifiable(updatedMessages),
-    );
-  }
-
-  void _removeLatestAssistantPlaceholder() {
-    final updatedMessages = List<AiMessage>.from(state.messages);
-    for (var index = updatedMessages.length - 1; index >= 0; index--) {
-      final message = updatedMessages[index];
-      if (message.role == 'assistant' &&
-          !message.isToolResultBubble &&
-          !message.isError &&
-          message.content.isEmpty) {
-        updatedMessages.removeAt(index);
-        state = state.copyWith(
-          messages: List<AiMessage>.unmodifiable(updatedMessages),
-        );
-        return;
-      }
-    }
-  }
-
-  void _updateDisplayMessage(
-    String messageId, {
-    required String content,
-    bool? isError,
-  }) {
-    final updatedMessages = List<AiMessage>.from(state.messages);
-    final index = updatedMessages.indexWhere(
-      (message) => message.id == messageId,
-    );
-    if (index == -1) {
-      return;
-    }
-
-    updatedMessages[index] = updatedMessages[index].copyWith(
-      content: content,
-      isError: isError ?? updatedMessages[index].isError,
-    );
-    state = state.copyWith(
-      messages: List<AiMessage>.unmodifiable(updatedMessages),
-    );
-  }
-
-  void _replaceLatestAssistantPlaceholder({
-    required String content,
-    required bool isError,
-  }) {
-    final updatedMessages = List<AiMessage>.from(state.messages);
-    for (var index = updatedMessages.length - 1; index >= 0; index--) {
-      final message = updatedMessages[index];
-      if (message.role != 'assistant' ||
-          message.isToolResultBubble ||
-          message.isError) {
-        continue;
-      }
-      updatedMessages[index] = message.copyWith(
-        content: content,
-        isError: isError,
-      );
-      state = state.copyWith(
-        messages: List<AiMessage>.unmodifiable(updatedMessages),
-      );
-      return;
-    }
-
-    _appendDisplayMessage(
-      AiMessage(
-        id: const Uuid().v4(),
-        role: 'assistant',
-        content: content,
-        isError: isError,
-      ),
-    );
-  }
-
-  Future<void> _finishStoppedToolPhase({required AiConfig config}) async {
-    state = state.copyWith(
-      isStreaming: false,
-      error: null,
-      lastResponseIssue: null,
-    );
-    _syncContextState(
-      protocolMessages: state.protocolMessages,
-      config: config,
-      lastError: null,
-      recoveryMode: AiChatRecoveryMode.none,
-    );
-    _stopRequested = false;
-    await _saveChatHistory();
-  }
-
-  void _pushStreamingContent(String content) {
-    if (_streamingContentController.isClosed) {
-      return;
-    }
-    _streamingContentController.add(content);
-  }
-
-  void _pushStreamingThinking(bool isThinking) {
-    if (_streamingThinkingController.isClosed) {
-      return;
-    }
-    _streamingThinkingController.add(isThinking);
-  }
-
-  void _clearStreamingContent() {
-    if (_streamingContentController.isClosed) {
-      return;
-    }
-    _streamingContentController.add('');
-    _latestStreamingContent = '';
-    _latestStreamingThinkingContent = '';
-  }
-
-  String _composeDisplayContent({
-    required String thinkingContent,
-    required String answerContent,
-  }) {
-    return AiThinkingMarkup.compose(
-      thinking: thinkingContent,
-      answer: answerContent,
-    );
-  }
-
-  void _clearStreamingThinking() {
-    if (_streamingThinkingController.isClosed) {
-      return;
-    }
-    _streamingThinkingController.add(false);
-  }
-
-  AiChatContextAssembly _assembleContext({
-    required List<AiMessage> protocolMessages,
-    AiChatSessionContext? previousContext,
-    AiConfig? config,
-    bool forceCompact = false,
-    String? lastError,
-    AiChatRecoveryMode recoveryMode = AiChatRecoveryMode.none,
-  }) {
-    final recentRounds = _resolveRecentRounds(config);
-    final tokenBudget = _resolveTokenBudget(config);
-    return _contextAssembler.assemble(
-      protocolMessages: protocolMessages,
-      sessionRules: state.systemPrompt ?? previousContext?.sessionRules ?? '',
-      tokenBudget: tokenBudget,
-      recentRounds: recentRounds,
-      previousContext: previousContext,
-      forceCompact: forceCompact,
-      lastError: lastError,
-      recoveryMode: recoveryMode,
-    );
-  }
-
-  void _syncContextState({
-    required List<AiMessage> protocolMessages,
-    AiConfig? config,
-    bool forceCompact = false,
-    String? lastError,
-    AiChatRecoveryMode recoveryMode = AiChatRecoveryMode.none,
-  }) {
-    final assembly = _buildPersistedContextAssembly(
-      protocolMessages: protocolMessages,
-      previousContext: state.sessionContext,
-      config: config,
-      forceCompact: forceCompact,
-      lastError: lastError,
-      recoveryMode: recoveryMode,
-    );
-    state = state.copyWith(
-      protocolMessages: List<AiMessage>.unmodifiable(
-        assembly.sanitizedProtocolMessages,
-      ),
-      sessionContext: assembly.context.copyWith(
-        checkpoint: state.sessionContext.checkpoint,
-      ),
-      contextStats: assembly.context.stats,
-      contextVersion: assembly.context.version,
-    );
-  }
-
-  void _refreshCheckpoint({
-    required List<AiMessage> protocolMessages,
-    required AiChatRecoveryMode recoveryMode,
-  }) {
-    final existingCheckpoint = state.sessionContext.checkpoint;
-    final lastUserMessage =
-        existingCheckpoint?.lastUserMessage ??
-        _findLastUserMessage(protocolMessages);
-    if (existingCheckpoint == null && lastUserMessage == null) {
-      return;
-    }
-
-    final nextCheckpoint =
-        (existingCheckpoint ??
-                AiChatCheckpoint(
-                  createdAtIso: DateTime.now().toIso8601String(),
-                  lastUserMessage: lastUserMessage,
-                ))
-            .copyWith(
-              createdAtIso: DateTime.now().toIso8601String(),
-              lastUserMessage: lastUserMessage,
-              protocolMessages: List<AiMessage>.unmodifiable(protocolMessages),
-              sessionMemorySnapshot: state.sessionContext.sessionMemory,
-              taskStateSnapshot: state.sessionContext.taskState,
-              toolTraceSnapshot: state.sessionContext.toolTrace,
-              recoveryMode: recoveryMode,
-            );
-
-    state = state.copyWith(
-      sessionContext: state.sessionContext.copyWith(checkpoint: nextCheckpoint),
-    );
-  }
-
-  AiChatContextAssembly _buildPersistedContextAssembly({
-    required List<AiMessage> protocolMessages,
-    AiChatSessionContext? previousContext,
-    AiConfig? config,
-    bool forceCompact = false,
-    String? lastError,
-    AiChatRecoveryMode recoveryMode = AiChatRecoveryMode.none,
-  }) {
-    var assembly = _assembleContext(
-      protocolMessages: protocolMessages,
-      previousContext: previousContext,
-      config: config,
-      forceCompact: forceCompact,
-      lastError: lastError,
-      recoveryMode: recoveryMode,
-    );
-    final sanitizedMessages = assembly.sanitizedProtocolMessages;
-    final shouldCompactStoredProtocol = forceCompact;
-    if (!shouldCompactStoredProtocol) {
-      return assembly;
-    }
-
-    final compactedMessages = _compactProtocolMessages(sanitizedMessages);
-    if (_sameMessages(sanitizedMessages, compactedMessages)) {
-      return assembly;
-    }
-
-    assembly = _assembleContext(
-      protocolMessages: compactedMessages,
-      previousContext: previousContext,
-      config: config,
-      forceCompact: forceCompact,
-      lastError: lastError,
-      recoveryMode: recoveryMode,
-    );
-    return assembly;
-  }
-
-  int _resolveRecentRounds(AiConfig? config) {
-    if (config == null) {
-      return 3;
-    }
-    final rounds = config.memoryRounds <= 0 ? 1 : config.memoryRounds.toInt();
-    return rounds < 1 ? 1 : rounds;
-  }
-
-  int _resolveTokenBudget(AiConfig? config) {
-    if (config == null || config.maxToken <= 0) {
-      return 6000;
-    }
-    final estimate = config.maxToken * 6;
-    if (estimate < 2400) {
-      return 2400;
-    }
-    if (estimate > 12000) {
-      return 12000;
-    }
-    return estimate;
-  }
-
-  bool _isContinueEligible(AiMessage displayMessage, int displayIndex) {
-    return displayMessage.role == 'assistant' &&
-        displayMessage.isError &&
-        state.lastResponseIssue == AiResponseIssue.partialResponse &&
-        displayIndex == state.messages.length - 1 &&
-        displayMessage.content.trim().isNotEmpty &&
-        !state.sessionContext.hasPendingToolPhase;
-  }
-
-  bool _isResumeToolPhaseEligible(AiMessage displayMessage, int displayIndex) {
-    return displayMessage.role == 'assistant' &&
-        displayMessage.isError &&
-        state.lastResponseIssue == AiResponseIssue.partialResponse &&
-        displayIndex == state.messages.length - 1 &&
-        state.sessionContext.hasPendingToolPhase;
-  }
-
-  Future<void> _restoreFromCheckpointAndRun({
-    required AiChatRecoveryMode recoveryMode,
-  }) async {
-    final config = ref.read(aiConfigProvider).value;
-    final checkpoint = state.sessionContext.checkpoint;
-    if (config == null ||
-        checkpoint == null ||
-        checkpoint.protocolMessages.isEmpty) {
-      return;
-    }
-
-    final restoredProtocolMessages = List<AiMessage>.from(
-      checkpoint.protocolMessages,
-    );
-    final restoredDisplayMessages = _buildDisplayMessagesFromProtocol(
-      restoredProtocolMessages,
-    );
-    final placeholder = AiMessage(
-      id: const Uuid().v4(),
-      role: 'assistant',
-      content: '',
-    );
-    final contextAssembly = _assembleContext(
-      protocolMessages: restoredProtocolMessages,
-      previousContext: state.sessionContext.copyWith(checkpoint: checkpoint),
-      config: config,
-      recoveryMode: recoveryMode,
-    );
-    state = state.copyWith(
-      messages: List<AiMessage>.unmodifiable([
-        ...restoredDisplayMessages,
-        placeholder,
-      ]),
-      protocolMessages: List<AiMessage>.unmodifiable(
-        contextAssembly.sanitizedProtocolMessages,
-      ),
-      isStreaming: true,
-      error: null,
-      lastResponseIssue: null,
-      sessionContext: contextAssembly.context.copyWith(checkpoint: checkpoint),
-      contextStats: contextAssembly.context.stats,
-      contextVersion: contextAssembly.context.version,
-    );
-    await _saveChatHistory();
-    Future<void>.microtask(() async {
-      try {
-        await _runAssistantTurn(
-          config: config,
-          protocolMessages: contextAssembly.sanitizedProtocolMessages,
-          placeholderId: placeholder.id,
-          retriesRemaining: _defaultTransientRetryCount,
-          toolsJson: _buildToolsJson(),
-          recoveryMode: recoveryMode,
-        );
-      } catch (error) {
-        _markDisplayMessageError(
-          placeholder.id,
-          _describeThrownError(error),
-          AiResponseIssue.networkError,
-        );
-      }
-    });
-  }
-
-  String _describeThrownError(Object error) {
-    if (error is PlatformException) {
-      return _describePlatformException(error);
-    }
-    return error.toString();
-  }
-
-  AiResponseIssue _classifyPlatformIssue(PlatformException error) {
-    final code = error.code.toLowerCase();
-    if (code.contains('parse')) {
-      return AiResponseIssue.parseError;
-    }
-    return AiResponseIssue.networkError;
-  }
-}
-
-class _SessionSummarySections {
-  final List<String> userNeeds = [];
-  final List<String> knownConclusions = [];
-  final List<String> toolFindings = [];
-  final List<String> nextSteps = [];
-}
-
-class _CollectedAssistantResponse {
-  const _CollectedAssistantResponse({
-    required this.content,
-    this.thinkingContent = '',
-    this.responsesReasoningItems = const [],
-    this.toolCalls,
-    this.issue,
-    this.errorMessage,
-    this.userStopped = false,
-    this.retryableIssue = false,
-  });
-
-  final String content;
-  final String thinkingContent;
-  final List<String> responsesReasoningItems;
-  final List<Map<String, dynamic>>? toolCalls;
-  final AiResponseIssue? issue;
-  final String? errorMessage;
-  final bool userStopped;
-  final bool retryableIssue;
 }
 
 class _LegacyStandardToolExecutor implements AiToolExecutor {

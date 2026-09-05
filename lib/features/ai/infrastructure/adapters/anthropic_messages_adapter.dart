@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:JsxposedX/features/ai/domain/events/ai_stream_event.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
 import 'package:JsxposedX/features/ai/domain/ports/ai_protocol_adapter.dart';
+import 'package:JsxposedX/features/ai/domain/services/ai_multimodal_message_codec.dart';
 import 'package:JsxposedX/features/ai/infrastructure/adapters/protocol_adapter_support.dart';
 import 'package:JsxposedX/features/ai/infrastructure/transport/sse_decoder.dart';
 
@@ -300,7 +301,14 @@ class AnthropicMessagesAdapter implements AiProtocolAdapter {
   static Map<String, Object?> _messageJson(AiMessage message) {
     final content = <Map<String, Object?>>[];
     final text = aiTextContent(message);
-    if (text.isNotEmpty) content.add({'type': 'text', 'text': text});
+    if (message.role == AiMessageRole.user &&
+        AiMultimodalMessageCodec.isEncoded(text)) {
+      content.addAll(
+        AiMultimodalMessageCodec.toAnthropicContent(text, isZh: true),
+      );
+    } else if (text.isNotEmpty) {
+      content.add({'type': 'text', 'text': text});
+    }
     for (final part in message.parts.whereType<AiToolCallPart>()) {
       content.add({
         'type': 'tool_use',

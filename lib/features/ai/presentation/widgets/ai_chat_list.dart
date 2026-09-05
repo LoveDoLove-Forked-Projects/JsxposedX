@@ -9,21 +9,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-typedef AiChatBubbleBuilder = Widget Function({
-  required AiMessage message,
-  required String retryLabel,
-  required VoidCallback onRetry,
-  required String packageName,
-});
+typedef AiChatBubbleBuilder =
+    Widget Function({
+      required AiMessage message,
+      required String retryLabel,
+      required VoidCallback onRetry,
+      required String packageName,
+    });
 
-typedef AiChatStreamingBubbleBuilder = Widget Function({
-  required AiMessage message,
-  required String retryLabel,
-  required VoidCallback onRetry,
-  required String packageName,
-  required Stream<String> streamingContentStream,
-  required Stream<bool> streamingThinkingStream,
-});
+typedef AiChatStreamingBubbleBuilder =
+    Widget Function({
+      required AiMessage message,
+      required String retryLabel,
+      required VoidCallback onRetry,
+      required String packageName,
+      required Stream<String> streamingContentStream,
+      required Stream<bool> streamingThinkingStream,
+    });
 
 class AiChatList extends HookConsumerWidget {
   const AiChatList({
@@ -59,8 +61,7 @@ class AiChatList extends HookConsumerWidget {
         builder: (context, constraints) {
           final isCompactLayout =
               effectiveCompact || constraints.maxHeight < (220 * scopeScale);
-          final horizontalPadding =
-              (effectiveCompact ? 12 : 20) * scopeScale;
+          final horizontalPadding = (effectiveCompact ? 12 : 20) * scopeScale;
           final topPadding = (isCompactLayout ? 10 : 18) * scopeScale;
           final bottomPadding = 12 * scopeScale;
           final minHeight = constraints.maxHeight - topPadding - bottomPadding;
@@ -89,16 +90,18 @@ class AiChatList extends HookConsumerWidget {
       );
     }
 
-    final chatState = ref.watch(aiChatRuntimeProvider(packageName: packageName));
+    final chatState = ref.watch(
+      aiChatRuntimeProvider(packageName: packageName),
+    );
     final chatNotifier = ref.read(
       aiChatRuntimeProvider(packageName: packageName).notifier,
     );
     final totalVisibleCount = chatState.totalVisibleMessagesCount;
-    final hasMore = messages.length < totalVisibleCount;
-    final remainingCount = (totalVisibleCount - messages.length).clamp(
-      0,
-      totalVisibleCount,
-    );
+    final hasMore =
+        chatState.hasOlderMessages || messages.length < totalVisibleCount;
+    final remainingCount =
+        (totalVisibleCount - messages.length).clamp(0, totalVisibleCount) +
+        (chatState.hasOlderMessages ? 1 : 0);
     final reversedMessages = messages.reversed.toList(growable: false);
     final retryLabel =
         chatState.lastResponseIssue == AiResponseIssue.partialResponse
@@ -155,6 +158,7 @@ class AiChatList extends HookConsumerWidget {
           }
           return _StreamingAiChatBubble(
             key: ValueKey(message.id),
+            initialContent: message.content,
             role: message.role,
             isError: message.isError,
             isToolCalling: message.isToolResultBubble,
@@ -194,22 +198,14 @@ class AiChatList extends HookConsumerWidget {
 }
 
 class _EmptyChatState extends StatelessWidget {
-  const _EmptyChatState({
-    required this.isCompact,
-  });
+  const _EmptyChatState({required this.isCompact});
 
   final bool isCompact;
 
   @override
   Widget build(BuildContext context) {
     final scopeScale = AiChatCompactScope.scaleOf(context);
-    final lines = context.isZh
-        ? const [
-            '欢迎使用',
-          ]
-        : const [
-            'Welcome',
-          ];
+    final lines = context.isZh ? const ['欢迎使用'] : const ['Welcome'];
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -276,7 +272,8 @@ class _EmptyChatState extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               for (var index = 0; index < lines.length; index++) ...[
-                if (index > 0) SizedBox(height: (isCompact ? 6 : 8) * scopeScale),
+                if (index > 0)
+                  SizedBox(height: (isCompact ? 6 : 8) * scopeScale),
                 Text(
                   lines[index],
                   style: TextStyle(
@@ -290,9 +287,7 @@ class _EmptyChatState extends StatelessWidget {
               SizedBox(height: (isCompact ? 10 : 12) * scopeScale),
               OutlinedButton(
                 onPressed: () {
-                  UrlHelper.openUrlInBrowser(
-                    url: 'https://api.muxueai.pro',
-                  );
+                  UrlHelper.openUrlInBrowser(url: 'https://api.muxueai.pro');
                 },
                 style: OutlinedButton.styleFrom(
                   padding: EdgeInsets.symmetric(
@@ -323,6 +318,7 @@ class _EmptyChatState extends StatelessWidget {
 class _StreamingAiChatBubble extends HookWidget {
   const _StreamingAiChatBubble({
     super.key,
+    required this.initialContent,
     required this.role,
     required this.isError,
     required this.isToolCalling,
@@ -333,6 +329,7 @@ class _StreamingAiChatBubble extends HookWidget {
     this.packageName,
   });
 
+  final String initialContent;
   final String role;
   final bool isError;
   final bool isToolCalling;
@@ -344,7 +341,7 @@ class _StreamingAiChatBubble extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = useState('');
+    final content = useState(initialContent);
     final isThinking = useState(false);
 
     useEffect(() {

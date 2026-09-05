@@ -2,6 +2,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:JsxposedX/features/ai/data/models/ai_config_dto.dart';
 import 'package:JsxposedX/features/ai/data/repositories/drift_ai_catalog_repository.dart';
+import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart'
+    as standard;
 import 'package:JsxposedX/features/ai/domain/ports/ai_credential_store.dart';
 import 'package:JsxposedX/features/ai/infrastructure/migration/legacy_ai_config_importer.dart';
 import 'package:JsxposedX/features/ai/infrastructure/persistence/ai_database.dart';
@@ -78,6 +80,58 @@ void main() {
     expect(report.importedConfigIds, ['valid']);
     expect(report.failures.single.configId, 'invalid');
     expect(await catalog.getConnections(), hasLength(1));
+  });
+
+  test('atomically keeps discovered models and assistant settings', () async {
+    const legacy = AiConfigDto(
+      id: 'standard',
+      name: 'Standard config',
+      apiKey: 'secret',
+      apiUrl: 'https://example.test/v1',
+      moduleName: 'model-2',
+    );
+
+    await importer.importConfig(
+      legacy,
+      discoveredModels: const [
+        standard.AiModelDefinition(
+          id: 'model-1',
+          connectionId: 'legacy-connection-standard',
+          displayName: 'Model 1',
+          capabilities: standard.AiModelCapabilities(streaming: true),
+          limits: standard.AiModelLimits(contextTokens: 8192),
+        ),
+        standard.AiModelDefinition(
+          id: 'model-2',
+          connectionId: 'legacy-connection-standard',
+          displayName: 'Model 2',
+          capabilities: standard.AiModelCapabilities(
+            streaming: true,
+            toolCalling: true,
+          ),
+          limits: standard.AiModelLimits(contextTokens: 32768),
+        ),
+      ],
+      systemPrompt: 'Analyze precisely.',
+      contextMode: standard.AiContextMode.fullHistory,
+      approvalMode: standard.AiToolApprovalMode.always,
+      maxToolRounds: 12,
+    );
+
+    final models = await catalog.getModels('legacy-connection-standard');
+    expect(
+      models.map((model) => model.id),
+      containsAll(['model-1', 'model-2']),
+    );
+    final assistant = await catalog.getAssistant('legacy-assistant-standard');
+    expect(assistant?.modelId, 'model-2');
+    expect(assistant?.systemPrompt, 'Analyze precisely.');
+    expect(assistant?.contextPolicy.mode, standard.AiContextMode.fullHistory);
+    expect(
+      assistant?.toolPolicy.approvalMode,
+      standard.AiToolApprovalMode.always,
+    );
+    expect(assistant?.toolPolicy.maxRounds, 12);
   });
 
   test('rolls back catalog data and a new credential on failure', () async {

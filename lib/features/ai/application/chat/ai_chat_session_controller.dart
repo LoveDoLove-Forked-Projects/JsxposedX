@@ -172,6 +172,25 @@ class AiChatSessionController {
     await _regenerateFrom(userMessage);
   }
 
+  Future<void> retryByMessageId(String messageId) async {
+    await initialize();
+    _ensureCanStart();
+    final index = _state.messages.indexWhere(
+      (message) => message.id == messageId,
+    );
+    if (index < 0) return;
+    final target = _state.messages[index];
+    if (target.role == AiMessageRole.user) {
+      await _regenerateFrom(target);
+      return;
+    }
+    final userMessage = _findUserMessageBefore(index);
+    if (userMessage == null) {
+      throw StateError('The response has no user parent');
+    }
+    await _regenerateFrom(userMessage);
+  }
+
   Future<void> regenerateLastResponse() async {
     await initialize();
     _ensureCanStart();
@@ -188,6 +207,30 @@ class AiChatSessionController {
     await _regenerateFrom(userMessage);
   }
 
+  Future<void> editUserMessageAndResend({
+    required String messageId,
+    required String updatedText,
+  }) async {
+    await initialize();
+    _ensureCanStart();
+    final index = _state.messages.indexWhere(
+      (message) =>
+          message.id == messageId && message.role == AiMessageRole.user,
+    );
+    if (index < 0 || updatedText.trim().isEmpty) return;
+    final original = _state.messages[index];
+    final updated = original.copyWith(
+      parts: original.parts
+          .map(
+            (part) => part is AiTextPart
+                ? AiContentPart.text(updatedText.trim())
+                : part,
+          )
+          .toList(growable: false),
+    );
+    await _regenerateFrom(updated);
+  }
+
   Future<void> _regenerateFrom(AiMessage userMessage) async {
     final discardedIds = _state.messages
         .skipWhile((message) => message.id != userMessage.id)
@@ -197,6 +240,9 @@ class AiChatSessionController {
       conversationId,
       discardedIds,
     );
+    // A retry writes the same record again, while an edited resend replaces
+    // the persisted user content before the new assistant turn starts.
+    await _conversationRepository.saveMessage(userMessage);
     final history =
         _state.messages
             .takeWhile((message) => message.id != userMessage.id)
@@ -311,6 +357,27 @@ class AiChatSessionController {
         await _finishRun(finalSnapshot, placeholder);
         return;
       }
+      final invalidToolCall = finalSnapshot.toolCalls.firstWhere(
+        (call) =>
+            call.id == null ||
+            call.id!.trim().isEmpty ||
+            call.name.trim().isEmpty,
+        orElse: () => const AiToolCallSnapshot(index: -1),
+      );
+      if (invalidToolCall.index >= 0) {
+        await _finishRun(
+          finalSnapshot.copyWith(
+            status: AiStreamStatus.failed,
+            failure: AiFailure(
+              code: AiFailureCode.protocolMalformed,
+              messageKey:
+                  'Responses tool call ${invalidToolCall.index} is missing call_id or name',
+            ),
+          ),
+          placeholder,
+        );
+        return;
+      }
       if (toolRound >= maxToolRounds || environment?.toolExecutor == null) {
         await _finishRun(
           finalSnapshot.copyWith(
@@ -329,11 +396,21 @@ class AiChatSessionController {
         finalSnapshot,
         placeholder,
       );
+      workingHistory = [...workingHistory, assistantMessage];
+      _emit(
+        _state.copyWith(
+          messages: workingHistory,
+          phase: AiChatSessionPhase.requesting,
+          activeRequestId: null,
+          activeAssistantMessageId: null,
+          runSnapshot: null,
+        ),
+      );
       final toolMessages = await _executeToolCalls(
         assistantMessage,
         assistant.toolPolicy.maxResultBytes,
       );
-      workingHistory = [...workingHistory, assistantMessage, ...toolMessages];
+      workingHistory = [...workingHistory, ...toolMessages];
       parentId = toolMessages.lastOrNull?.id ?? assistantMessage.id;
       _emit(
         _state.copyWith(
@@ -373,7 +450,17 @@ class AiChatSessionController {
     var previousTime =
         assistantMessage.completedAt ?? assistantMessage.createdAt;
     for (final part in assistantMessage.parts.whereType<AiToolCallPart>()) {
-      final rawResult = await executor.execute(part.toolCall);
+      AiToolResult rawResult;
+      try {
+        rawResult = await executor.execute(part.toolCall);
+      } catch (error) {
+        rawResult = AiToolResult(
+          toolCallId: part.toolCall.id,
+          name: part.toolCall.name,
+          success: false,
+          content: 'Tool execution failed: $error',
+        );
+      }
       final content = _truncateUtf8Like(rawResult.content, maxResultBytes);
       final now = _now().toUtc();
       final createdAt = now.isAfter(previousTime)
@@ -394,8 +481,14 @@ class AiChatSessionController {
       );
       results.add(message);
       previousTime = createdAt;
+      await _conversationRepository.saveMessage(message);
+      _emit(
+        _state.copyWith(
+          messages: [..._state.messages, message],
+          phase: AiChatSessionPhase.requesting,
+        ),
+      );
     }
-    await _conversationRepository.saveMessages(results);
     return results;
   }
 

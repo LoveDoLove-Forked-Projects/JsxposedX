@@ -854,6 +854,8 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                           key: ValueKey(
                                                             message.id,
                                                           ),
+                                                          initialContent:
+                                                              message.content,
                                                           role: message.role,
                                                           isError:
                                                               message.isError,

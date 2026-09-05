@@ -17,6 +17,7 @@ class AiChatRuntimeState {
     this.systemPrompt,
     this.environmentVersion,
     this.visibleMessageCount = 10,
+    this.hasOlderMessages = false,
     this.lastResponseIssue,
     this.sessionInitState = AiSessionInitState.ready,
     this.sessionContext = const AiChatSessionContext(),
@@ -35,6 +36,7 @@ class AiChatRuntimeState {
   final String? systemPrompt;
   final String? environmentVersion;
   final int visibleMessageCount;
+  final bool hasOlderMessages;
   final AiResponseIssue? lastResponseIssue;
   final AiSessionInitState sessionInitState;
   final AiChatSessionContext sessionContext;
@@ -114,6 +116,7 @@ class AiChatRuntimeState {
     Object? systemPrompt = _runtimeStateSentinel,
     Object? environmentVersion = _runtimeStateSentinel,
     int? visibleMessageCount,
+    bool? hasOlderMessages,
     Object? lastResponseIssue = _runtimeStateSentinel,
     AiSessionInitState? sessionInitState,
     AiChatSessionContext? sessionContext,
@@ -140,6 +143,7 @@ class AiChatRuntimeState {
           ? this.environmentVersion
           : environmentVersion as String?,
       visibleMessageCount: visibleMessageCount ?? this.visibleMessageCount,
+      hasOlderMessages: hasOlderMessages ?? this.hasOlderMessages,
       lastResponseIssue: identical(lastResponseIssue, _runtimeStateSentinel)
           ? this.lastResponseIssue
           : lastResponseIssue as AiResponseIssue?,

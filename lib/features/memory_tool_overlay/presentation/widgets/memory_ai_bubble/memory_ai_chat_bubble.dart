@@ -57,6 +57,7 @@ class MemoryAiChatBubble extends BaseAiChatBubble {
 class MemoryAiStreamingChatBubble extends HookWidget {
   const MemoryAiStreamingChatBubble({
     super.key,
+    required this.initialContent,
     required this.role,
     required this.isError,
     required this.isToolCalling,
@@ -68,6 +69,7 @@ class MemoryAiStreamingChatBubble extends HookWidget {
     this.packageName,
   });
 
+  final String initialContent;
   final String role;
   final bool isError;
   final bool isToolCalling;
@@ -80,7 +82,7 @@ class MemoryAiStreamingChatBubble extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = useState('');
+    final content = useState(initialContent);
     final isThinking = useState(false);
 
     useEffect(() {

@@ -58,6 +58,9 @@ class AiChatSessionV2 extends _$AiChatSessionV2 {
 
   Future<void> retryLastResponse() => _requireController().retryLastResponse();
 
+  Future<void> retryByMessageId(String messageId) =>
+      _requireController().retryByMessageId(messageId);
+
   Future<void> regenerateLastResponse() =>
       _requireController().regenerateLastResponse();
 

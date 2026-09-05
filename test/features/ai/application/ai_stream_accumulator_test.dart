@@ -98,6 +98,37 @@ void main() {
     },
   );
 
+  test('keeps the canonical tool call id when later deltas omit it', () async {
+    final accumulator = AiStreamAccumulator(
+      requestId: 'tool-id',
+      publishInterval: Duration.zero,
+    );
+    accumulator.add(
+      const AiStreamEvent.started(requestId: 'tool-id', sequence: 0),
+    );
+    accumulator.add(
+      const AiStreamEvent.toolCallDelta(
+        requestId: 'tool-id',
+        sequence: 1,
+        index: 0,
+        toolCallId: 'call_real',
+        name: 'search',
+        argumentsDelta: '{}',
+      ),
+    );
+    accumulator.add(
+      const AiStreamEvent.toolCallDelta(
+        requestId: 'tool-id',
+        sequence: 2,
+        index: 0,
+        toolCallId: 'fc_item_wrong',
+      ),
+    );
+
+    expect(accumulator.currentSnapshot.toolCalls.single.id, 'call_real');
+    await accumulator.close();
+  });
+
   test('rejects stale, foreign and post-terminal events', () async {
     final accumulator = AiStreamAccumulator(requestId: 'r3');
     accumulator.add(const AiStreamEvent.started(requestId: 'r3', sequence: 0));

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:JsxposedX/features/ai/domain/events/ai_stream_event.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
 import 'package:JsxposedX/features/ai/domain/ports/ai_protocol_adapter.dart';
+import 'package:JsxposedX/features/ai/domain/services/ai_multimodal_message_codec.dart';
 import 'package:JsxposedX/features/ai/infrastructure/adapters/protocol_adapter_support.dart';
 import 'package:JsxposedX/features/ai/infrastructure/transport/sse_decoder.dart';
 
@@ -294,9 +295,16 @@ class OpenAiChatAdapter implements AiProtocolAdapter {
         'content': toolResult.toolResult.content,
       };
     }
+    final requestContent =
+        message.role == AiMessageRole.user &&
+            AiMultimodalMessageCodec.isEncoded(content)
+        ? AiMultimodalMessageCodec.toOpenAiContent(content, isZh: true)
+        : content;
     return {
       'role': message.role.name,
-      'content': content.isEmpty && toolCalls.isNotEmpty ? null : content,
+      'content': content.isEmpty && toolCalls.isNotEmpty
+          ? null
+          : requestContent,
       if (reasoning.isNotEmpty) 'reasoning_content': reasoning,
       if (toolCalls.isNotEmpty)
         'tool_calls': toolCalls

@@ -9,6 +9,55 @@ import 'package:JsxposedX/features/ai/infrastructure/adapters/openai_chat_adapte
 import 'package:JsxposedX/features/ai/infrastructure/adapters/openai_responses_adapter.dart';
 
 void main() {
+  test('serializes legacy UI image payload for every standard adapter', () {
+    final encoded =
+        '[ai_multimodal_v1]${jsonEncode({
+          'text': 'inspect this',
+          'attachments': [
+            {'kind': 'image', 'file_name': 'sample.png', 'mime_type': 'image/png', 'size': 3, 'data_base64': 'YWJj'},
+          ],
+        })}';
+    final request = _request(providerId: 'openai').copyWith(
+      messages: [
+        AiMessage(
+          id: 'image-user',
+          conversationId: 'conversation',
+          role: AiMessageRole.user,
+          parts: [AiContentPart.text(encoded)],
+          createdAt: _epoch,
+        ),
+      ],
+    );
+
+    final chat = const OpenAiChatAdapter().prepare(
+      request,
+      context: _adapterContext('openai', 'openai.chat.v1'),
+    );
+    final chatContent =
+        ((chat.body['messages'] as List).single as Map)['content'] as List;
+    expect(chatContent.last['type'], 'image_url');
+
+    final responses = const OpenAiResponsesAdapter().prepare(
+      request.copyWith(
+        connection: request.connection.copyWith(providerId: 'openai-responses'),
+      ),
+      context: _adapterContext('openai-responses', 'openai.responses.v1'),
+    );
+    final responsesContent =
+        ((responses.body['input'] as List).single as Map)['content'] as List;
+    expect(responsesContent.last['type'], 'input_image');
+
+    final anthropic = const AnthropicMessagesAdapter().prepare(
+      request.copyWith(
+        connection: request.connection.copyWith(providerId: 'anthropic'),
+      ),
+      context: _adapterContext('anthropic', 'anthropic.messages.v1'),
+    );
+    final anthropicContent =
+        ((anthropic.body['messages'] as List).single as Map)['content'] as List;
+    expect(anthropicContent.last['type'], 'image');
+  });
+
   test(
     'keeps provider detail from an embedded OpenAI error envelope',
     () async {
@@ -87,6 +136,87 @@ void main() {
       expect(values.whereType<AiResponseCompleted>(), hasLength(1));
     });
 
+    test('rejects a non-standard [DONE] marker', () async {
+      final values = await adapter
+          .decodeStream(
+            Stream.value(utf8.encode('data: [DONE]\n\n')),
+            requestId: 'responses',
+          )
+          .toList();
+
+      expect(
+        values.whereType<AiResponseFailed>().single.failure.code,
+        AiFailureCode.protocolMalformed,
+      );
+    });
+
+    test('keeps Responses call_id when argument deltas use item_id', () async {
+      final stream = Stream<List<int>>.fromIterable([
+        utf8.encode(
+          'data: ${jsonEncode({
+            'type': 'response.output_item.added',
+            'output_index': 0,
+            'item': {'id': 'fc_item_1', 'type': 'function_call', 'call_id': 'call_real_1', 'name': 'list_apk_files'},
+          })}\n\n',
+        ),
+        utf8.encode(
+          'data: ${jsonEncode({'type': 'response.function_call_arguments.delta', 'output_index': 0, 'item_id': 'fc_item_1', 'delta': '{"path":""}'})}\n\n',
+        ),
+        utf8.encode(
+          'data: ${jsonEncode({
+            'type': 'response.completed',
+            'response': {'status': 'completed'},
+          })}\n\n',
+        ),
+      ]);
+
+      final values = await adapter
+          .decodeStream(stream, requestId: 'responses')
+          .toList();
+
+      final call = values.whereType<AiToolCallDelta>().last;
+      expect(call.toolCallId, 'call_real_1');
+    });
+
+    test(
+      'resolves a delayed call_id without using the item_id as a fallback',
+      () async {
+        final stream = Stream<List<int>>.fromIterable([
+          utf8.encode(
+            'data: ${jsonEncode({
+              'type': 'response.output_item.added',
+              'output_index': 0,
+              'item': {'id': 'fc_item_2', 'type': 'function_call', 'name': 'search'},
+            })}\n\n',
+          ),
+          utf8.encode(
+            'data: ${jsonEncode({'type': 'response.function_call_arguments.delta', 'output_index': 0, 'item_id': 'fc_item_2', 'delta': '{"q":"x"}'})}\n\n',
+          ),
+          utf8.encode(
+            'data: ${jsonEncode({'type': 'response.function_call_arguments.done', 'output_index': 0, 'item_id': 'fc_item_2', 'call_id': 'call_real_2', 'arguments': '{"q":"x"}'})}\n\n',
+          ),
+          utf8.encode(
+            'data: ${jsonEncode({
+              'type': 'response.completed',
+              'response': {'status': 'completed'},
+            })}\n\n',
+          ),
+        ]);
+
+        final values = await adapter
+            .decodeStream(stream, requestId: 'responses')
+            .toList();
+        final calls = values.whereType<AiToolCallDelta>().toList();
+
+        expect(calls.first.toolCallId, isNull);
+        expect(calls.last.toolCallId, 'call_real_2');
+        expect(
+          calls.map((call) => call.toolCallId),
+          isNot(contains('fc_item_2')),
+        );
+      },
+    );
+
     test('uses Responses request shape', () {
       final prepared = adapter.prepare(
         _request(providerId: 'openai-responses'),
@@ -134,6 +264,60 @@ void main() {
       expect(input['role'], 'assistant');
       expect((input['content'] as List).single['type'], 'output_text');
     });
+
+    test(
+      'serializes a Responses function call and output as a linked pair',
+      () {
+        final request = _request(providerId: 'openai-responses').copyWith(
+          messages: [
+            AiMessage(
+              id: 'assistant-call',
+              conversationId: 'conversation',
+              role: AiMessageRole.assistant,
+              parts: const [
+                AiContentPart.toolCall(
+                  toolCall: AiToolCall(
+                    id: 'fc_1',
+                    name: 'inspect',
+                    arguments: {'path': ''},
+                  ),
+                ),
+              ],
+              createdAt: _epoch,
+            ),
+            AiMessage(
+              id: 'tool-result',
+              conversationId: 'conversation',
+              role: AiMessageRole.tool,
+              parts: const [
+                AiContentPart.toolResult(
+                  toolResult: AiToolResult(
+                    toolCallId: 'fc_1',
+                    name: 'inspect',
+                    success: true,
+                    content: 'ok',
+                  ),
+                ),
+              ],
+              createdAt: _epoch,
+            ),
+          ],
+        );
+        final prepared = adapter.prepare(
+          request,
+          context: _adapterContext('openai-responses', 'openai.responses.v1'),
+        );
+        final input = prepared.body['input'] as List;
+        final call = input.whereType<Map>().singleWhere(
+          (item) => item['type'] == 'function_call',
+        );
+        final output = input.whereType<Map>().singleWhere(
+          (item) => item['type'] == 'function_call_output',
+        );
+        expect(call['call_id'], 'fc_1');
+        expect(output['call_id'], call['call_id']);
+      },
+    );
   });
 
   group('AnthropicMessagesAdapter', () {
@@ -225,6 +409,17 @@ void main() {
       expect(prepared.body['messages'], hasLength(1));
     });
   });
+}
+
+AiAdapterContext _adapterContext(String providerId, String adapterId) {
+  return AiAdapterContext(
+    provider: AiProviderDefinition(
+      id: providerId,
+      displayName: providerId,
+      adapterId: adapterId,
+    ),
+    apiKey: 'secret',
+  );
 }
 
 AiRequest _request({required String providerId, bool includeSystem = false}) {

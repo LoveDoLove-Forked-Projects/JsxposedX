@@ -83,7 +83,7 @@ void main() {
     },
   );
 
-  test('falls back to SSE when a gateway labels an SSE body as JSON', () async {
+  test('does not reinterpret a JSON response as SSE', () async {
     final payload = jsonEncode({
       'choices': [
         {
@@ -107,8 +107,8 @@ void main() {
 
     final result = await orchestrator.start(_request()).completed;
 
-    expect(result.status, AiStreamStatus.completed);
-    expect(result.text, 'mislabelled delta');
+    expect(result.status, AiStreamStatus.failed);
+    expect(result.failure?.code, AiFailureCode.protocolMalformed);
   });
 
   test(

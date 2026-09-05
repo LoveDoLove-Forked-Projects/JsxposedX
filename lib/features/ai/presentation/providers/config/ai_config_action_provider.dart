@@ -39,6 +39,7 @@ class AiConfigAction extends _$AiConfigAction {
       ref.invalidate(aiConfigListProvider);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
+      rethrow;
     }
   }
 
@@ -51,6 +52,7 @@ class AiConfigAction extends _$AiConfigAction {
       ref.invalidate(aiConfigListProvider);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
+      rethrow;
     }
   }
 
@@ -65,6 +67,7 @@ class AiConfigAction extends _$AiConfigAction {
       ref.invalidate(aiConfigProvider);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
+      rethrow;
     }
   }
 
@@ -77,6 +80,7 @@ class AiConfigAction extends _$AiConfigAction {
       ref.invalidate(aiConfigListProvider);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
+      rethrow;
     }
   }
 
@@ -91,6 +95,7 @@ class AiConfigAction extends _$AiConfigAction {
       await _syncStandardCatalog(activeConfig);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
+      rethrow;
     }
   }
 
@@ -181,6 +186,86 @@ class AiConfigAction extends _$AiConfigAction {
     }
     await catalog.saveModels(connectionId, definitions);
     ref.invalidate(aiModelsV2Provider(connectionId));
+  }
+
+  Future<void> saveConfiguration({
+    required AiConfig config,
+    required List<AiModel> models,
+    required String? systemPrompt,
+    required AiContextMode contextMode,
+    required int? recentMessageLimit,
+    required AiToolApprovalMode approvalMode,
+    required int maxToolRounds,
+    required bool addToList,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      final connectionId = 'legacy-connection-${config.id}';
+      final catalog = ref.read(aiCatalogRepositoryProvider);
+      final existing = {
+        for (final definition in await catalog.getModels(connectionId))
+          definition.id: definition,
+      };
+      final definitions = models
+          .map((model) {
+            final definition = existing[model.id];
+            return (definition ??
+                    AiModelDefinition(
+                      id: model.id,
+                      connectionId: connectionId,
+                      displayName: model.id,
+                      capabilities: const AiModelCapabilities(
+                        streaming: true,
+                        toolCalling: true,
+                      ),
+                      limits: const AiModelLimits(),
+                    ))
+                .copyWith(
+                  limits: (definition?.limits ?? const AiModelLimits())
+                      .copyWith(
+                        contextTokens:
+                            model.contextTokens ??
+                            definition?.limits.contextTokens,
+                        maxOutputTokens:
+                            model.maxOutputTokens ??
+                            definition?.limits.maxOutputTokens,
+                      ),
+                  source: 'discovered',
+                );
+          })
+          .toList(growable: false);
+      await LegacyAiConfigImporter.forImport(
+        catalogRepository: catalog,
+        credentialStore: ref.read(aiCredentialStoreProvider),
+      ).importConfig(
+        AiConfigDto.fromEntity(config),
+        discoveredModels: definitions,
+        systemPrompt: systemPrompt,
+        contextMode: contextMode,
+        recentMessageLimit: recentMessageLimit,
+        approvalMode: approvalMode,
+        maxToolRounds: maxToolRounds,
+      );
+
+      // Keep only the active-selection/list projection in legacy storage while
+      // standard catalog rows remain the source of truth for configuration.
+      final legacy = ref.read(aiConfigActionRepositoryProvider);
+      if (addToList) {
+        await legacy.addConfig(config);
+      } else {
+        await legacy.updateConfig(config);
+      }
+      await legacy.saveConfig(config);
+      state = const AsyncValue.data(null);
+      ref.invalidate(aiConfigProvider);
+      ref.invalidate(aiConfigListProvider);
+      ref.invalidate(aiConnectionsV2Provider);
+      ref.invalidate(aiAssistantsV2Provider);
+      ref.invalidate(aiModelsV2Provider(connectionId));
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      rethrow;
+    }
   }
 
   Future<void> _syncStandardCatalog(AiConfig config) async {

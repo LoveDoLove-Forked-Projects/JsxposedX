@@ -74,7 +74,35 @@ class LegacyAiConfigImporter {
     );
   }
 
-  Future<void> _importOne(AiConfigDto legacy) async {
+  Future<void> importConfig(
+    AiConfigDto config, {
+    List<AiModelDefinition> discoveredModels = const [],
+    String? systemPrompt,
+    AiContextMode? contextMode,
+    int? recentMessageLimit,
+    AiToolApprovalMode? approvalMode,
+    int? maxToolRounds,
+  }) {
+    return _importOne(
+      config,
+      discoveredModels: discoveredModels,
+      systemPrompt: systemPrompt,
+      contextMode: contextMode,
+      recentMessageLimit: recentMessageLimit,
+      approvalMode: approvalMode,
+      maxToolRounds: maxToolRounds,
+    );
+  }
+
+  Future<void> _importOne(
+    AiConfigDto legacy, {
+    List<AiModelDefinition> discoveredModels = const [],
+    String? systemPrompt,
+    AiContextMode? contextMode,
+    int? recentMessageLimit,
+    AiToolApprovalMode? approvalMode,
+    int? maxToolRounds,
+  }) async {
     final endpoint = _parseEndpoint(legacy.apiUrl, legacy.apiType);
     final connectionId = 'legacy-connection-${legacy.id}';
     final modelId = legacy.moduleName.trim();
@@ -92,15 +120,25 @@ class LegacyAiConfigImporter {
         credentialRef: expectedReference,
       );
     }
-    final connection = AiProviderConnection(
-      id: connectionId,
-      providerId: endpoint.providerId,
-      displayName: legacy.name.isEmpty ? modelId : legacy.name,
-      baseUri: endpoint.baseUri,
-      credentialRef: credentialRef,
-      endpointOverrides: endpoint.overrides,
+    final existingConnection = await _catalogRepository.getConnection(
+      connectionId,
     );
-    final model = AiModelDefinition(
+    final connection =
+        (existingConnection ??
+                AiProviderConnection(
+                  id: connectionId,
+                  providerId: endpoint.providerId,
+                  displayName: legacy.name.isEmpty ? modelId : legacy.name,
+                  baseUri: endpoint.baseUri,
+                ))
+            .copyWith(
+              providerId: endpoint.providerId,
+              displayName: legacy.name.isEmpty ? modelId : legacy.name,
+              baseUri: endpoint.baseUri,
+              credentialRef: credentialRef ?? existingConnection?.credentialRef,
+              endpointOverrides: endpoint.overrides,
+            );
+    final selectedModel = AiModelDefinition(
       id: modelId,
       connectionId: connectionId,
       displayName: modelId,
@@ -113,32 +151,98 @@ class LegacyAiConfigImporter {
       ),
       source: 'legacyImport',
     );
-    final now = _now().toUtc();
-    final assistant = AiAssistantProfile(
-      id: 'legacy-assistant-${legacy.id}',
-      name: legacy.name.isEmpty ? modelId : legacy.name,
-      connectionId: connectionId,
-      modelId: modelId,
-      generation: AiGenerationOptions(
-        maxOutputTokens: legacy.maxToken > 0 ? legacy.maxToken : null,
-        temperature: legacy.temperature >= 0 ? legacy.temperature : null,
+    final modelById = <String, AiModelDefinition>{
+      for (final model in await _catalogRepository.getModels(connectionId))
+        model.id: model,
+      for (final model in discoveredModels)
+        if (model.connectionId == connectionId) model.id: model,
+    };
+    modelById[modelId] = (modelById[modelId] ?? selectedModel).copyWith(
+      displayName: modelById[modelId]?.displayName ?? selectedModel.displayName,
+      limits: (modelById[modelId]?.limits ?? selectedModel.limits).copyWith(
+        maxOutputTokens:
+            modelById[modelId]?.limits.maxOutputTokens ??
+            selectedModel.limits.maxOutputTokens,
       ),
-      contextPolicy: AiContextPolicy(
-        mode: legacy.memoryRounds > 0
-            ? AiContextMode.recentMessages
-            : AiContextMode.tokenBudget,
-        recentMessageLimit: legacy.memoryRounds > 0
-            ? legacy.memoryRounds.toInt()
-            : null,
-      ),
-      createdAt: now,
-      updatedAt: now,
     );
+    final now = _now().toUtc();
+    final assistantId = 'legacy-assistant-${legacy.id}';
+    final existingAssistant = await _catalogRepository.getAssistant(
+      assistantId,
+    );
+    final defaultContextMode = legacy.memoryRounds > 0
+        ? AiContextMode.recentMessages
+        : AiContextMode.tokenBudget;
+    final effectiveContextMode =
+        contextMode ??
+        existingAssistant?.contextPolicy.mode ??
+        defaultContextMode;
+    final assistant =
+        (existingAssistant ??
+                AiAssistantProfile(
+                  id: assistantId,
+                  name: legacy.name.isEmpty ? modelId : legacy.name,
+                  connectionId: connectionId,
+                  modelId: modelId,
+                  generation: AiGenerationOptions(
+                    maxOutputTokens: legacy.maxToken > 0
+                        ? legacy.maxToken
+                        : null,
+                    temperature: legacy.temperature >= 0
+                        ? legacy.temperature
+                        : null,
+                  ),
+                  contextPolicy: AiContextPolicy(
+                    mode: defaultContextMode,
+                    recentMessageLimit: legacy.memoryRounds > 0
+                        ? legacy.memoryRounds.toInt()
+                        : null,
+                  ),
+                  createdAt: now,
+                  updatedAt: now,
+                ))
+            .copyWith(
+              name: legacy.name.isEmpty ? modelId : legacy.name,
+              connectionId: connectionId,
+              modelId: modelId,
+              systemPrompt: systemPrompt?.trim().isEmpty == true
+                  ? null
+                  : systemPrompt?.trim() ?? existingAssistant?.systemPrompt,
+              contextPolicy:
+                  (existingAssistant?.contextPolicy ??
+                          AiContextPolicy(mode: defaultContextMode))
+                      .copyWith(
+                        mode: effectiveContextMode,
+                        recentMessageLimit:
+                            effectiveContextMode == AiContextMode.recentMessages
+                            ? recentMessageLimit ??
+                                  existingAssistant
+                                      ?.contextPolicy
+                                      .recentMessageLimit ??
+                                  (legacy.memoryRounds > 0
+                                      ? legacy.memoryRounds.toInt()
+                                      : null)
+                            : null,
+                      ),
+              toolPolicy:
+                  (existingAssistant?.toolPolicy ?? const AiToolPolicy())
+                      .copyWith(
+                        approvalMode:
+                            approvalMode ??
+                            existingAssistant?.toolPolicy.approvalMode ??
+                            AiToolApprovalMode.riskyOnly,
+                        maxRounds:
+                            maxToolRounds?.clamp(0, 32).toInt() ??
+                            existingAssistant?.toolPolicy.maxRounds ??
+                            8,
+                      ),
+              updatedAt: now,
+            );
 
     try {
       await _catalogRepository.saveConnectionBundle(
         connection: connection,
-        models: [model],
+        models: modelById.values.toList(growable: false),
         assistants: [assistant],
       );
     } catch (_) {

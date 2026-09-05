@@ -77,7 +77,7 @@ class AiStreamAccumulator {
           index,
           () => _MutableToolCall(index),
         );
-        if (toolCallId != null && toolCallId.isNotEmpty) {
+        if (call.id == null && toolCallId != null && toolCallId.isNotEmpty) {
           call.id = toolCallId;
         }
         if (name != null && name.isNotEmpty) {

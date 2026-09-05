@@ -3,47 +3,50 @@ import 'package:JsxposedX/features/ai/application/chat/ai_chat_context_builder.d
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
 
 void main() {
-  test('uses a bounded recent-message context and removes tool results', () {
-    final messages = [
-      for (var index = 0; index < 4; index++)
-        AiMessage(
-          id: 'message-$index',
-          conversationId: 'conversation',
-          role: AiMessageRole.user,
-          parts: [
-            AiContentPart.text('$index'),
-            const AiContentPart.toolResult(
-              toolResult: AiToolResult(
-                toolCallId: 'call',
-                name: 'tool',
-                success: true,
-                content: 'result',
+  test(
+    'uses a bounded recent-message context and drops orphan tool results',
+    () {
+      final messages = [
+        for (var index = 0; index < 4; index++)
+          AiMessage(
+            id: 'message-$index',
+            conversationId: 'conversation',
+            role: AiMessageRole.user,
+            parts: [
+              AiContentPart.text('$index'),
+              const AiContentPart.toolResult(
+                toolResult: AiToolResult(
+                  toolCallId: 'call',
+                  name: 'tool',
+                  success: true,
+                  content: 'result',
+                ),
               ),
-            ),
-          ],
-          createdAt: _epoch.add(Duration(seconds: index)),
+            ],
+            createdAt: _epoch.add(Duration(seconds: index)),
+          ),
+      ];
+      final result = const AiChatContextBuilder().build(
+        assistant: _assistant(
+          contextPolicy: const AiContextPolicy(
+            mode: AiContextMode.recentMessages,
+            recentMessageLimit: 2,
+            includeToolResults: false,
+          ),
         ),
-    ];
-    final result = const AiChatContextBuilder().build(
-      assistant: _assistant(
-        contextPolicy: const AiContextPolicy(
-          mode: AiContextMode.recentMessages,
-          recentMessageLimit: 2,
-          includeToolResults: false,
-        ),
-      ),
-      model: _model(),
-      messages: messages,
-      idFactory: () => 'system',
-      now: _epoch,
-    );
+        model: _model(),
+        messages: messages,
+        idFactory: () => 'system',
+        now: _epoch,
+      );
 
-    expect(result.map((message) => message.id), ['message-2', 'message-3']);
-    expect(
-      result.expand((message) => message.parts).whereType<AiToolResultPart>(),
-      isEmpty,
-    );
-  });
+      expect(result.map((message) => message.id), ['message-2', 'message-3']);
+      expect(
+        result.expand((message) => message.parts).whereType<AiToolResultPart>(),
+        isEmpty,
+      );
+    },
+  );
 
   test('uses user-role fallback when a model has no system role', () {
     final result = const AiChatContextBuilder().build(
@@ -75,6 +78,158 @@ void main() {
         );
 
     expect(result.map((message) => message.id), ['two', 'three']);
+  });
+
+  test('keeps Responses function calls paired with their results', () {
+    final call = AiMessage(
+      id: 'assistant-call',
+      conversationId: 'conversation',
+      role: AiMessageRole.assistant,
+      parts: const [
+        AiContentPart.toolCall(
+          toolCall: AiToolCall(id: 'fc_1', name: 'inspect', arguments: {}),
+        ),
+      ],
+      createdAt: _epoch,
+    );
+    final resultMessage = AiMessage(
+      id: 'tool-result',
+      conversationId: 'conversation',
+      role: AiMessageRole.tool,
+      parts: const [
+        AiContentPart.toolResult(
+          toolResult: AiToolResult(
+            toolCallId: 'fc_1',
+            name: 'inspect',
+            success: true,
+            content: 'ok',
+          ),
+        ),
+      ],
+      createdAt: _epoch.add(const Duration(seconds: 1)),
+    );
+    final result = const AiChatContextBuilder().build(
+      assistant: _assistant(
+        contextPolicy: const AiContextPolicy(
+          mode: AiContextMode.recentMessages,
+          recentMessageLimit: 1,
+        ),
+      ),
+      model: _model(),
+      messages: [call, resultMessage],
+      idFactory: () => 'unused',
+      now: _epoch,
+    );
+
+    expect(result.map((message) => message.id), [
+      'assistant-call',
+      'tool-result',
+    ]);
+  });
+
+  test('drops incomplete calls from a multi-call assistant turn', () {
+    final assistantCall = AiMessage(
+      id: 'assistant-call',
+      conversationId: 'conversation',
+      role: AiMessageRole.assistant,
+      parts: const [
+        AiContentPart.toolCall(
+          toolCall: AiToolCall(
+            id: 'fc_complete',
+            name: 'inspect',
+            arguments: {},
+          ),
+        ),
+        AiContentPart.toolCall(
+          toolCall: AiToolCall(id: 'fc_missing', name: 'search', arguments: {}),
+        ),
+      ],
+      createdAt: _epoch,
+    );
+    final resultMessage = AiMessage(
+      id: 'tool-result',
+      conversationId: 'conversation',
+      role: AiMessageRole.tool,
+      parts: const [
+        AiContentPart.toolResult(
+          toolResult: AiToolResult(
+            toolCallId: 'fc_complete',
+            name: 'inspect',
+            success: true,
+            content: 'ok',
+          ),
+        ),
+      ],
+      createdAt: _epoch.add(const Duration(seconds: 1)),
+    );
+
+    final result = const AiChatContextBuilder().build(
+      assistant: _assistant(),
+      model: _model(),
+      messages: [assistantCall, resultMessage],
+      idFactory: () => 'unused',
+      now: _epoch,
+    );
+
+    final calls = result
+        .expand((message) => message.parts)
+        .whereType<AiToolCallPart>()
+        .map((part) => part.toolCall.id);
+    final outputs = result
+        .expand((message) => message.parts)
+        .whereType<AiToolResultPart>()
+        .map((part) => part.toolResult.toolCallId);
+    expect(calls, ['fc_complete']);
+    expect(outputs, ['fc_complete']);
+  });
+
+  test('keeps a complete tool exchange even with a legacy false flag', () {
+    final call = AiMessage(
+      id: 'assistant-call',
+      conversationId: 'conversation',
+      role: AiMessageRole.assistant,
+      parts: const [
+        AiContentPart.toolCall(
+          toolCall: AiToolCall(id: 'fc_1', name: 'inspect', arguments: {}),
+        ),
+      ],
+      createdAt: _epoch,
+    );
+    final output = AiMessage(
+      id: 'tool-result',
+      conversationId: 'conversation',
+      role: AiMessageRole.tool,
+      parts: const [
+        AiContentPart.toolResult(
+          toolResult: AiToolResult(
+            toolCallId: 'fc_1',
+            name: 'inspect',
+            success: true,
+            content: 'ok',
+          ),
+        ),
+      ],
+      createdAt: _epoch.add(const Duration(seconds: 1)),
+    );
+
+    final result = const AiChatContextBuilder().build(
+      assistant: _assistant(
+        contextPolicy: const AiContextPolicy(includeToolResults: false),
+      ),
+      model: _model(),
+      messages: [call, output],
+      idFactory: () => 'unused',
+      now: _epoch,
+    );
+
+    expect(
+      result.expand((message) => message.parts).whereType<AiToolCallPart>(),
+      hasLength(1),
+    );
+    expect(
+      result.expand((message) => message.parts).whereType<AiToolResultPart>(),
+      hasLength(1),
+    );
   });
 }
 
