@@ -85,12 +85,9 @@ class AiReversePage extends HookConsumerWidget {
         if (scrollController.offset > followThreshold) {
           return;
         }
-
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!scrollController.hasClients) {
-            return;
-          }
-          if (scrollController.offset > followThreshold) {
+          if (!scrollController.hasClients ||
+              scrollController.offset > followThreshold) {
             return;
           }
           scrollController.jumpTo(0.0);
@@ -100,24 +97,15 @@ class AiReversePage extends HookConsumerWidget {
     }, [chatNotifier, scrollController]);
 
     useEffect(() {
-      Future.microtask(() async {
-        await initializeReverseSession();
-      });
-
-      return () {
-        unawaited(environment.dispose());
-      };
+      Future.microtask(initializeReverseSession);
+      return () => unawaited(environment.dispose());
     }, [environment]);
 
     final lastBackPressTime = useRef<DateTime?>(null);
-
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) {
-          return;
-        }
-
+        if (didPop) return;
         final now = DateTime.now();
         final last = lastBackPressTime.value;
         if (last != null && now.difference(last) < const Duration(seconds: 2)) {
@@ -140,9 +128,7 @@ class AiReversePage extends HookConsumerWidget {
               Expanded(
                 child: PageView(
                   controller: pageController,
-                  onPageChanged: (page) {
-                    currentPage.value = page;
-                  },
+                  onPageChanged: (page) => currentPage.value = page,
                   children: [
                     AiChatList(
                       messages: chatState.visibleMessages,
@@ -178,10 +164,7 @@ class AiReversePage extends HookConsumerWidget {
 }
 
 class _ReverseInitBanner extends StatelessWidget {
-  const _ReverseInitBanner({
-    required this.chatState,
-    required this.onRetry,
-  });
+  const _ReverseInitBanner({required this.chatState, required this.onRetry});
 
   final AiChatRuntimeState chatState;
   final Future<void> Function() onRetry;
@@ -191,7 +174,6 @@ class _ReverseInitBanner extends StatelessWidget {
     if (chatState.sessionInitState == AiSessionInitState.ready) {
       return const SizedBox.shrink();
     }
-
     final isInitializing =
         chatState.sessionInitState == AiSessionInitState.initializing;
     final backgroundColor = isInitializing
@@ -203,7 +185,6 @@ class _ReverseInitBanner extends StatelessWidget {
     final message = isInitializing
         ? context.l10n.aiReverseSessionInitializingBanner
         : (chatState.error ?? context.l10n.aiReverseSessionInitFailedBanner);
-
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -215,21 +196,18 @@ class _ReverseInitBanner extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            isInitializing ? Icons.hourglass_top_rounded : Icons.error_outline_rounded,
+            isInitializing
+                ? Icons.hourglass_top_rounded
+                : Icons.error_outline_rounded,
             color: foregroundColor,
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: foregroundColor),
-            ),
+            child: Text(message, style: TextStyle(color: foregroundColor)),
           ),
           if (!isInitializing)
             TextButton(
-              onPressed: () async {
-                await onRetry();
-              },
+              onPressed: onRetry,
               child: Text(
                 context.l10n.retry,
                 style: TextStyle(color: foregroundColor),

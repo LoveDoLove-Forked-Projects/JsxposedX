@@ -26,6 +26,7 @@ dependencies:
   hive: ^2.2.3
   path_provider: ^2.1.5
   shared_preferences: ^2.5.3
+  flutter_secure_storage: ^9.2.4
   flutter_smart_dialog: ^4.9.8+9
   fluttertoast: ^8.2.8
   json_annotation: ^4.9.0

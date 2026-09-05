@@ -51,7 +51,8 @@ class AiConfigQueryDatasource {
 
     final models = <AiModelDto>[
       for (final model in rawModels)
-        if (model is Map<String, dynamic>) AiModelDto.fromJson(model),
+        if (model is Map<String, dynamic>)
+          AiModelDto.fromModelListJson(model),
     ];
     await _storage.setString(
       cacheKey,
@@ -165,7 +166,7 @@ class AiConfigQueryDatasource {
       }
       return <AiModelDto>[
         for (final item in jsonList)
-          if (item is Map<String, dynamic>) AiModelDto.fromJson(item),
+          if (item is Map<String, dynamic>) AiModelDto.fromModelListJson(item),
       ];
     } catch (_) {
       return const <AiModelDto>[];
@@ -173,10 +174,13 @@ class AiConfigQueryDatasource {
   }
 
   Options _buildModelsRequestOptions(AiConfigDto config) {
+    final isAnthropic = config.apiType == 'anthropic';
     return Options(
       headers: <String, dynamic>{
-        if (config.apiKey.isNotEmpty)
+        if (config.apiKey.isNotEmpty && !isAnthropic)
           'Authorization': 'Bearer ${config.apiKey}',
+        if (config.apiKey.isNotEmpty && isAnthropic) 'x-api-key': config.apiKey,
+        if (isAnthropic) 'anthropic-version': '2023-06-01',
         'Content-Type': 'application/json',
       },
     );

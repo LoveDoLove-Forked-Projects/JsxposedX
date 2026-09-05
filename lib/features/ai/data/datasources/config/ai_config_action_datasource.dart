@@ -65,7 +65,14 @@ class AiConfigActionDatasource {
   /// 添加新配置到列表
   Future<void> addConfig(AiConfigDto config) async {
     final list = await getConfigList();
-    list.add(config);
+    // Treat the stable config ID as the identity key. This keeps retries or
+    // repeated taps idempotent instead of creating duplicate entries.
+    final index = list.indexWhere((item) => item.id == config.id);
+    if (index == -1) {
+      list.add(config);
+    } else {
+      list[index] = config;
+    }
     await saveConfigList(list);
   }
 

@@ -21,6 +21,15 @@ import 'package:JsxposedX/features/ai/domain/services/ai_multimodal_message_code
 import 'package:JsxposedX/features/ai/presentation/providers/chat/ai_chat_query_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/config/ai_config_query_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_action_state.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_controller.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_environment.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_state.dart';
+import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart'
+    as standard;
+import 'package:JsxposedX/features/ai/domain/ports/ai_tool_executor.dart';
+import 'package:JsxposedX/features/ai/domain/repositories/ai_conversation_repository.dart';
+import 'package:JsxposedX/features/ai/infrastructure/migration/legacy_ai_conversation_migrator.dart';
+import 'package:JsxposedX/features/ai/presentation/providers/system/ai_system_providers.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -78,6 +87,12 @@ class AiChatAction extends _$AiChatAction {
   String _latestStreamingContent = '';
   String _latestStreamingThinkingContent = '';
   final AiChatContextAssembler _contextAssembler = AiChatContextAssembler();
+  final Set<String> _migratedPackages = <String>{};
+  bool _standardPersistenceAvailable = false;
+  AiChatSessionController? _standardSessionController;
+  StreamSubscription<AiChatSessionState>? _standardSessionSubscription;
+  AiChatSessionEnvironment? _standardSessionEnvironment;
+  bool _standardSessionReady = false;
 
   Stream<String> get streamingContentStream =>
       _streamingContentController.stream;
@@ -91,8 +106,22 @@ class AiChatAction extends _$AiChatAction {
       _isDisposed = true;
       _activeRequestCancelToken?.cancel('provider_disposed');
       _activeResponseSubscription?.cancel();
+      _standardSessionSubscription?.cancel();
+      _standardSessionController?.close();
       _streamingContentController.close();
       _streamingThinkingController.close();
+    });
+    ref.listen(aiConfigProvider, (previous, next) {
+      final previousConfig = previous?.value;
+      final nextConfig = next.value;
+      if (_isDisposed || nextConfig == null) return;
+      if (previousConfig?.id == nextConfig.id &&
+          previousConfig?.moduleName == nextConfig.moduleName &&
+          previousConfig?.apiType == nextConfig.apiType &&
+          previousConfig?.apiUrl == nextConfig.apiUrl) {
+        return;
+      }
+      unawaited(_attachStandardSession());
     });
     Future.microtask(() {
       if (!_isDisposed) {
@@ -164,10 +193,131 @@ class AiChatAction extends _$AiChatAction {
         sessionRules: snapshot.systemPrompt,
       ),
     );
+    final previousEnvironment = _standardSessionEnvironment;
+    _standardSessionEnvironment = _buildStandardEnvironment(snapshot);
+    if (previousEnvironment?.version != snapshot.environmentVersion ||
+        previousEnvironment?.scopeId != snapshot.scopeId) {
+      unawaited(_attachStandardSession());
+    }
+  }
+
+  AiChatSessionEnvironment? _buildStandardEnvironment(
+    AiChatEnvironmentSnapshot snapshot,
+  ) {
+    final toolsSpec = snapshot.toolsSpec;
+    final executor = snapshot.toolExecutor;
+    final config = ref.read(aiConfigProvider).value;
+    final apiType = config?.apiType ?? AiApiType.openai;
+    final tools =
+        toolsSpec?.buildToolsJson(apiType: apiType) ??
+        const <Map<String, dynamic>>[];
+    return AiChatSessionEnvironment(
+      id: 'legacy-${snapshot.scopeId}',
+      scopeId: snapshot.scopeId,
+      version: snapshot.environmentVersion,
+      systemPrompt: snapshot.systemPrompt,
+      tools: tools
+          .map((raw) {
+            final function = raw['function'];
+            final map = function is Map
+                ? Map<String, dynamic>.from(function)
+                : Map<String, dynamic>.from(raw);
+            final parameters = map['parameters'] ?? map['input_schema'];
+            return standard.AiToolSpec(
+              name: map['name']?.toString() ?? '',
+              description: map['description']?.toString() ?? '',
+              inputSchema: parameters is Map
+                  ? Map<String, Object?>.from(parameters)
+                  : const <String, Object?>{},
+            );
+          })
+          .where((tool) => tool.name.isNotEmpty)
+          .toList(growable: false),
+      toolExecutor: executor == null
+          ? null
+          : _LegacyStandardToolExecutor(executor),
+    );
+  }
+
+  Future<void> _attachStandardSession() async {
+    final sessionId = state.currentSessionId;
+    final environment = _standardSessionEnvironment;
+    final config = ref.read(aiConfigProvider).value;
+    if (_isDisposed ||
+        sessionId == null ||
+        environment == null ||
+        config == null) {
+      return;
+    }
+    _standardSessionReady = false;
+    await _standardSessionSubscription?.cancel();
+    await _standardSessionController?.close();
+    _standardSessionSubscription = null;
+    _standardSessionController = null;
+    try {
+      await _migrateLegacySessions(config);
+      final controller = AiChatSessionController(
+        conversationId: sessionId,
+        catalogRepository: ref.read(aiCatalogRepositoryProvider),
+        conversationRepository: ref.read(aiConversationRepositoryV2Provider),
+        startRun: ref.read(aiChatOrchestratorProvider).start,
+        idFactory: const Uuid().v4,
+        environment: environment,
+      );
+      _standardSessionController = controller;
+      _standardSessionSubscription = controller.states.listen(
+        _applyStandardSessionState,
+      );
+      await controller.initialize();
+      if (identical(_standardSessionController, controller)) {
+        _standardSessionReady = true;
+        _applyStandardSessionState(controller.state);
+      }
+    } catch (_) {
+      _standardSessionReady = false;
+    }
+  }
+
+  void _applyStandardSessionState(AiChatSessionState next) {
+    if (_isDisposed || next.conversationId != state.currentSessionId) return;
+    final protocolMessages = next.messages
+        .map(LegacyAiConversationMigrator.toLegacyMessage)
+        .toList(growable: false);
+    var displayMessages = _buildDisplayMessagesFromProtocol(protocolMessages);
+    final snapshot = next.runSnapshot;
+    if (snapshot != null &&
+        (snapshot.text.isNotEmpty || snapshot.reasoning.isNotEmpty)) {
+      final streaming = AiMessage(
+        id: next.activeAssistantMessageId ?? 'standard-streaming',
+        role: 'assistant',
+        content: _composeDisplayContent(
+          thinkingContent: snapshot.reasoning,
+          answerContent: snapshot.text,
+        ),
+      );
+      displayMessages = [...displayMessages, streaming];
+    }
+    final isStreaming =
+        next.phase == AiChatSessionPhase.requesting ||
+        next.phase == AiChatSessionPhase.streaming ||
+        next.phase == AiChatSessionPhase.cancelling;
+    state = state.copyWith(
+      protocolMessages: List<AiMessage>.unmodifiable(protocolMessages),
+      messages: List<AiMessage>.unmodifiable(displayMessages),
+      isStreaming: isStreaming,
+      error: next.failure == null
+          ? null
+          : LegacyAiConversationMigrator.describeAiFailure(next.failure!),
+      lastResponseIssue: next.failure == null
+          ? null
+          : AiResponseIssue.networkError,
+    );
   }
 
   Future<void> _initSessions() async {
     try {
+      final config = await ref.read(aiConfigProvider.future);
+      await _migrateLegacySessions(config);
       final sessions = await getSessionsAsync();
       if (_isDisposed || sessions.isEmpty) {
         return;
@@ -195,9 +345,12 @@ class AiChatAction extends _$AiChatAction {
   }
 
   Future<List<AiSession>> getSessionsAsync() async {
-    final sessions = await ref
-        .read(aiChatQueryRepositoryProvider)
-        .getSessions(packageName);
+    final standardSessions = await _getStandardSessions();
+    final sessions = standardSessions.isNotEmpty
+        ? standardSessions
+        : await ref
+              .read(aiChatQueryRepositoryProvider)
+              .getSessions(packageName);
     sessions.sort(
       (left, right) => right.lastUpdateTime.compareTo(left.lastUpdateTime),
     );
@@ -213,9 +366,12 @@ class AiChatAction extends _$AiChatAction {
   Future<void> switchSession(String sessionId) async {
     _clearStreamingContent();
     _clearStreamingThinking();
-    final protocolMessages = await ref
-        .read(aiChatQueryRepositoryProvider)
-        .getChatHistory(packageName, sessionId);
+    var protocolMessages = await _readStandardMessages(sessionId);
+    if (protocolMessages.isEmpty) {
+      protocolMessages = await ref
+          .read(aiChatQueryRepositoryProvider)
+          .getChatHistory(packageName, sessionId);
+    }
     final storedContext = await ref
         .read(aiChatQueryRepositoryProvider)
         .getSessionContext(packageName, sessionId);
@@ -250,7 +406,7 @@ class AiChatAction extends _$AiChatAction {
     await ref
         .read(aiChatActionRepositoryProvider)
         .saveLastActiveSessionId(packageName, sessionId);
-    await _saveChatHistory();
+    await _attachStandardSession();
   }
 
   void loadMore() {
@@ -294,11 +450,30 @@ class AiChatAction extends _$AiChatAction {
 
     await ref
         .read(aiChatActionRepositoryProvider)
-        .saveSessions(packageName, updatedSessions);
-    await ref
-        .read(aiChatActionRepositoryProvider)
         .saveLastActiveSessionId(packageName, sessionId);
-    await _saveChatHistory();
+    final config = ref.read(aiConfigProvider).value;
+    var savedToStandard = false;
+    if (config != null) {
+      try {
+        await _conversationMigrator.saveLegacySession(
+          packageName: packageName,
+          session: session,
+          messages: const [],
+          config: config,
+        );
+        savedToStandard = true;
+        _standardPersistenceAvailable = true;
+      } catch (_) {
+        // Fall through to the legacy index when the standard store is not
+        // ready yet (for example during first-run database initialization).
+      }
+    }
+    if (!savedToStandard) {
+      await ref
+          .read(aiChatActionRepositoryProvider)
+          .saveSessions(packageName, updatedSessions);
+    }
+    await _attachStandardSession();
   }
 
   Future<void> send(String text) async {
@@ -308,9 +483,8 @@ class AiChatAction extends _$AiChatAction {
     _stopRequested = false;
 
     if (state.currentSessionId == null) {
-      // 这里的创建会引发 saveSessions 等 IO，绝对不能 await
-      unawaited(
-        createSession('新对话 ${DateTime.now().hour}:${DateTime.now().minute}'),
+      await createSession(
+        '新对话 ${DateTime.now().hour}:${DateTime.now().minute}',
       );
     }
 
@@ -342,6 +516,21 @@ class AiChatAction extends _$AiChatAction {
         isStreaming: false,
         lastResponseIssue: AiResponseIssue.parseError,
       );
+      return;
+    }
+
+    final standardController = _standardSessionController;
+    if (_standardSessionReady && standardController != null) {
+      try {
+        await standardController.sendText(text);
+      } catch (error) {
+        if (_isDisposed) return;
+        state = state.copyWith(
+          error: '消息发送失败：$error',
+          isStreaming: false,
+          lastResponseIssue: AiResponseIssue.networkError,
+        );
+      }
       return;
     }
 
@@ -1055,6 +1244,11 @@ class AiChatAction extends _$AiChatAction {
       return;
     }
 
+    if (_standardSessionReady && _standardSessionController != null) {
+      await _standardSessionController!.retryLastResponse();
+      return;
+    }
+
     final displayIndex = state.messages.indexWhere(
       (message) => message.id == messageId,
     );
@@ -1211,15 +1405,21 @@ class AiChatAction extends _$AiChatAction {
   }
 
   Future<void> deleteSession(String sessionId) async {
-    await ref
-        .read(aiChatActionRepositoryProvider)
-        .deleteSession(packageName, sessionId);
+    var deletedFromStandard = false;
+    try {
+      await _conversationMigrator.deleteSession(sessionId);
+      deletedFromStandard = true;
+    } catch (_) {
+      // The legacy store remains available as a last-resort fallback.
+    }
+    if (!deletedFromStandard) {
+      await ref
+          .read(aiChatActionRepositoryProvider)
+          .deleteSession(packageName, sessionId);
+    }
 
     final updatedSessions = List<AiSession>.from(state.sessions)
       ..removeWhere((session) => session.id == sessionId);
-    await ref
-        .read(aiChatActionRepositoryProvider)
-        .saveSessions(packageName, updatedSessions);
 
     if (state.currentSessionId == sessionId) {
       if (updatedSessions.isNotEmpty) {
@@ -1258,6 +1458,11 @@ class AiChatAction extends _$AiChatAction {
 
   Future<void> stopStreaming() async {
     if (!state.isStreaming) {
+      return;
+    }
+
+    if (_standardSessionReady && _standardSessionController != null) {
+      _standardSessionController!.cancel();
       return;
     }
 
@@ -1328,12 +1533,40 @@ class AiChatAction extends _$AiChatAction {
     }
 
     try {
-      await ref
-          .read(aiChatActionRepositoryProvider)
-          .saveChatHistory(packageName, sessionId, state.protocolMessages);
-      await ref
-          .read(aiChatActionRepositoryProvider)
-          .saveSessionContext(packageName, sessionId, state.sessionContext);
+      final config = ref.read(aiConfigProvider).value;
+      final session = state.sessions.firstWhere(
+        (item) => item.id == sessionId,
+        orElse: () => AiSession(
+          id: sessionId,
+          name: 'AI Chat',
+          packageName: packageName,
+          lastUpdateTime: DateTime.now(),
+          lastMessage: '',
+        ),
+      );
+      var savedToStandard = false;
+      if (config != null && _standardPersistenceAvailable) {
+        try {
+          await _conversationMigrator.saveLegacySession(
+            packageName: packageName,
+            session: session.copyWith(lastUpdateTime: DateTime.now()),
+            messages: state.protocolMessages,
+            config: config,
+          );
+          savedToStandard = true;
+        } catch (_) {
+          _standardPersistenceAvailable = false;
+        }
+      }
+
+      if (!savedToStandard) {
+        await ref
+            .read(aiChatActionRepositoryProvider)
+            .saveChatHistory(packageName, sessionId, state.protocolMessages);
+        await ref
+            .read(aiChatActionRepositoryProvider)
+            .saveSessionContext(packageName, sessionId, state.sessionContext);
+      }
 
       final sessionIndex = state.sessions.indexWhere(
         (session) => session.id == sessionId,
@@ -1351,16 +1584,76 @@ class AiChatAction extends _$AiChatAction {
           );
         });
 
-        // 这里的持久化 IO 已经在异步块内，但是为了双重保险，确保不被 await
-        unawaited(
-          ref
-              .read(aiChatActionRepositoryProvider)
-              .saveSessions(packageName, updatedSessions),
-        );
+        // The standard conversation repository owns message persistence. The
+        // legacy session index is only updated when migration is unavailable.
+        if (!_standardPersistenceAvailable) {
+          unawaited(
+            ref
+                .read(aiChatActionRepositoryProvider)
+                .saveSessions(packageName, updatedSessions),
+          );
+        }
       }
     } catch (_) {
       // Keep UI responsive even if persistence fails.
     }
+  }
+
+  LegacyAiConversationMigrator get _conversationMigrator =>
+      LegacyAiConversationMigrator(
+        queryRepository: ref.read(aiChatQueryRepositoryProvider),
+        catalogRepository: ref.read(aiCatalogRepositoryProvider),
+        conversationRepository: ref.read(aiConversationRepositoryV2Provider),
+      );
+
+  Future<void> _migrateLegacySessions(AiConfig config) async {
+    if (_migratedPackages.contains(packageName)) return;
+    await ref.read(aiSystemMigrationProvider.future);
+    await _conversationMigrator.migratePackage(
+      packageName: packageName,
+      config: config,
+    );
+    _standardPersistenceAvailable = true;
+    _migratedPackages.add(packageName);
+  }
+
+  Future<List<AiSession>> _getStandardSessions() async {
+    await ref.read(aiSystemMigrationProvider.future);
+    final repository = ref.read(aiConversationRepositoryV2Provider);
+    final conversations = <standard.AiConversation>[];
+    AiConversationCursor? cursor;
+    while (true) {
+      final page = await repository.getConversations(
+        before: cursor,
+        limit: 200,
+      );
+      conversations.addAll(page);
+      if (page.length < 200) break;
+      final oldest = page.last;
+      cursor = AiConversationCursor(updatedAt: oldest.updatedAt, id: oldest.id);
+    }
+    return conversations
+        .where((conversation) => conversation.scopeId == packageName)
+        .map(
+          (conversation) => AiSession(
+            id: conversation.id,
+            name: conversation.title,
+            packageName: packageName,
+            lastUpdateTime: conversation.updatedAt.toLocal(),
+            lastMessage: '',
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<AiMessage>> _readStandardMessages(String sessionId) async {
+    final conversation = await ref
+        .read(aiConversationRepositoryV2Provider)
+        .getConversation(sessionId);
+    if (conversation == null || conversation.scopeId != packageName) {
+      return const [];
+    }
+    return _conversationMigrator.readMessages(sessionId);
   }
 
   List<AiMessage> _buildDisplayMessagesFromProtocol(
@@ -2807,4 +3100,31 @@ class _CollectedAssistantResponse {
   final String? errorMessage;
   final bool userStopped;
   final bool retryableIssue;
+}
+
+class _LegacyStandardToolExecutor implements AiToolExecutor {
+  const _LegacyStandardToolExecutor(this._delegate);
+
+  final AiChatToolExecutorContract _delegate;
+
+  @override
+  Future<standard.AiToolResult> execute(
+    standard.AiToolCall call, {
+    AiToolProgress? onProgress,
+  }) async {
+    final result = await _delegate.execute(
+      AiToolCall(
+        id: call.id,
+        name: call.name,
+        arguments: Map<String, dynamic>.from(call.arguments),
+      ),
+      onProgress: onProgress,
+    );
+    return standard.AiToolResult(
+      toolCallId: result.toolCallId,
+      name: result.toolName,
+      success: result.success,
+      content: result.content,
+    );
+  }
 }
