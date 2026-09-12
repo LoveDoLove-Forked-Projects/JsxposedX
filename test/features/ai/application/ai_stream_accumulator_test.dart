@@ -5,7 +5,7 @@ import 'package:JsxposedX/features/ai/domain/events/ai_stream_event.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
 
 void main() {
-  test('coalesces deltas until flush without losing content', () async {
+  test('publishes text deltas immediately without losing content', () async {
     final accumulator = AiStreamAccumulator(
       requestId: 'r1',
       publishInterval: const Duration(hours: 1),
@@ -31,9 +31,9 @@ void main() {
       ),
     );
 
-    expect(snapshots, hasLength(1));
+    expect(snapshots, hasLength(3));
     accumulator.flush();
-    expect(snapshots, hasLength(2));
+    expect(snapshots, hasLength(3));
     expect(snapshots.last.text, '你好');
     expect(snapshots.last.sequence, 2);
 

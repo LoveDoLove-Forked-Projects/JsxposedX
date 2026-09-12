@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:JsxposedX/core/extensions/context_extensions.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/ai_chat_bubble.dart';
 import 'package:JsxposedX/features/memory_tool_overlay/presentation/widgets/memory_ai_bubble/memory_ai_bubble_container.dart';
@@ -84,6 +86,14 @@ class MemoryAiStreamingChatBubble extends HookWidget {
   Widget build(BuildContext context) {
     final content = useState(initialContent);
     final isThinking = useState(false);
+    final cursorVisible = useState(true);
+
+    useEffect(() {
+      final timer = Timer.periodic(const Duration(milliseconds: 520), (_) {
+        if (context.mounted) cursorVisible.value = !cursorVisible.value;
+      });
+      return timer.cancel;
+    }, const []);
 
     useEffect(() {
       final subscription = streamingContentStream.listen((data) {
@@ -108,16 +118,34 @@ class MemoryAiStreamingChatBubble extends HookWidget {
       return subscription.cancel;
     }, [streamingThinkingStream]);
 
-    return MemoryAiChatBubble(
-      content: content.value,
-      role: role,
-      isError: isError,
-      isToolCalling: isToolCalling,
-      isToolResultBubble: isToolResultBubble,
-      retryLabel: retryLabel,
-      onRetry: onRetry,
-      packageName: packageName,
-      loadingHint: isThinking.value ? _memoryLoadingHint(context) : null,
+    final cursor =
+        !isThinking.value && content.value.isNotEmpty && cursorVisible.value
+        ? '▍'
+        : '';
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topLeft,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 120),
+        reverseDuration: const Duration(milliseconds: 80),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        transitionBuilder: (child, animation) =>
+            FadeTransition(opacity: animation, child: child),
+        child: MemoryAiChatBubble(
+          key: ValueKey(content.value),
+          content: '${content.value}$cursor',
+          role: role,
+          isError: isError,
+          isToolCalling: isToolCalling,
+          isToolResultBubble: isToolResultBubble,
+          retryLabel: retryLabel,
+          onRetry: onRetry,
+          packageName: packageName,
+          loadingHint: isThinking.value ? _memoryLoadingHint(context) : null,
+        ),
+      ),
     );
   }
 }

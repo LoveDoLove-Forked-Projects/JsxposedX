@@ -63,10 +63,13 @@ class AiStreamAccumulator {
         _markDirty(immediate: true);
       case AiTextDelta(:final delta):
         _text.write(delta);
-        _markDirty();
+        // Publish text immediately. A provider may deliver many SSE events in
+        // one HTTP chunk; timer-only coalescing would make the UI appear to
+        // render the entire answer at once.
+        _markDirty(immediate: true);
       case AiReasoningDelta(:final delta):
         _reasoning.write(delta);
-        _markDirty();
+        _markDirty(immediate: true);
       case AiToolCallDelta(
         :final index,
         :final toolCallId,

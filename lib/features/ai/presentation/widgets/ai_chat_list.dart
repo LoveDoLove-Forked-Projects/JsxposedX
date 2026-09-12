@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:JsxposedX/core/extensions/context_extensions.dart';
 import 'package:JsxposedX/core/utils/url_helper.dart';
 import 'package:JsxposedX/common/pages/toast.dart';
@@ -513,6 +515,24 @@ class _StreamingAiChatBubble extends HookWidget {
   Widget build(BuildContext context) {
     final content = useState(initialContent);
     final isThinking = useState(false);
+    final cursorVisible = useState(true);
+
+    useEffect(() {
+      final timer = Timer.periodic(const Duration(milliseconds: 520), (_) {
+        if (context.mounted) cursorVisible.value = !cursorVisible.value;
+      });
+      return timer.cancel;
+    }, const []);
+
+    // The provider emits a new cumulative snapshot for every delta. Keep the
+    // bubble synchronized from props as well as the broadcast stream so a
+    // rebuild cannot miss an event delivered before subscription.
+    useEffect(() {
+      if (content.value != initialContent) {
+        content.value = initialContent;
+      }
+      return null;
+    }, [initialContent]);
 
     useEffect(() {
       final subscription = streamingContentStream.listen((data) {
@@ -539,18 +559,36 @@ class _StreamingAiChatBubble extends HookWidget {
       return subscription.cancel;
     }, [streamingThinkingStream]);
 
+    final cursor =
+        !isThinking.value && content.value.isNotEmpty && cursorVisible.value
+        ? '▍'
+        : '';
     return RepaintBoundary(
-      child: AiChatBubble(
-        content: content.value,
-        role: role,
-        isError: isError,
-        isToolCalling: isToolCalling,
-        retryLabel: retryLabel,
-        onRetry: onRetry,
-        packageName: packageName,
-        loadingHint: isThinking.value
-            ? (context.isZh ? 'AI 正在深度思考...' : 'AI is thinking deeply...')
-            : null,
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topLeft,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 120),
+          reverseDuration: const Duration(milliseconds: 80),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          transitionBuilder: (child, animation) =>
+              FadeTransition(opacity: animation, child: child),
+          child: AiChatBubble(
+            key: ValueKey(content.value),
+            content: '${content.value}$cursor',
+            role: role,
+            isError: isError,
+            isToolCalling: isToolCalling,
+            retryLabel: retryLabel,
+            onRetry: onRetry,
+            packageName: packageName,
+            loadingHint: isThinking.value
+                ? (context.isZh ? 'AI 正在深度思考...' : 'AI is thinking deeply...')
+                : null,
+          ),
+        ),
       ),
     );
   }
