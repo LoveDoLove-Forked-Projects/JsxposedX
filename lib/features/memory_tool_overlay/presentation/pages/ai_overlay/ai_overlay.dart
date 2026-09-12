@@ -5,12 +5,12 @@ import 'package:JsxposedX/common/widgets/custom_text_field.dart';
 import 'package:JsxposedX/common/widgets/overlay_window/overlay_panel_dialog.dart';
 import 'package:JsxposedX/common/widgets/overlay_window/overlay_text_input_context_menu.dart';
 import 'package:JsxposedX/core/extensions/context_extensions.dart';
-import 'package:JsxposedX/core/models/ai_session.dart';
 import 'package:JsxposedX/core/themes/ai_activation_theme.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_session_init_state.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/runtime/ai_chat_runtime_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/runtime/ai_chat_environment_initializer.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_runtime_state.dart';
+import 'package:JsxposedX/features/ai/presentation/states/ai_chat_session_view.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_compact_scope.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_input.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_list.dart';
@@ -126,7 +126,7 @@ class _AiOverlayViewport extends HookConsumerWidget {
       aiChatRuntimeProvider(packageName: chatScopeId),
     );
     final sessions = chatState.sessions;
-    final AiSession? currentSession = () {
+    final AiChatSessionView? currentSession = () {
       for (final session in sessions) {
         if (session.id == chatState.currentSessionId) {
           return session;
@@ -308,7 +308,7 @@ class _AiOverlayViewport extends HookConsumerWidget {
 
     final lastMessageId = useRef<String?>(null);
     useEffect(() {
-      final visibleMessages = chatState.visibleMessages;
+      final visibleMessages = chatState.visibleViewMessages;
       if (visibleMessages.isEmpty) {
         return null;
       }
@@ -331,7 +331,7 @@ class _AiOverlayViewport extends HookConsumerWidget {
         );
       });
       return null;
-    }, [chatState.visibleMessages.length]);
+    }, [chatState.visibleViewMessages.length]);
 
     useEffect(() {
       const followThreshold = 80.0;
@@ -797,7 +797,7 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                 Expanded(
                                                   child: AiChatList(
                                                     messages: chatState
-                                                        .visibleMessages,
+                                                        .visibleViewMessages,
                                                     scrollController:
                                                         scrollController,
                                                     packageName: chatScopeId,
@@ -1124,8 +1124,8 @@ class _AiOverlaySessionActions extends HookConsumerWidget {
   });
 
   final String chatScopeId;
-  final List<AiSession> sessions;
-  final AiSession? currentSession;
+  final List<AiChatSessionView> sessions;
+  final AiChatSessionView? currentSession;
   final bool isCompact;
   final double contentScale;
   final VoidCallback onCreateSession;
@@ -1147,7 +1147,7 @@ class _AiOverlaySessionActions extends HookConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        PopupMenuButton<AiSession>(
+        PopupMenuButton<AiChatSessionView>(
           enabled: sessions.isNotEmpty,
           tooltip: context.l10n.aiSwitchSession,
           onSelected: (session) async {
@@ -1157,7 +1157,7 @@ class _AiOverlaySessionActions extends HookConsumerWidget {
           },
           itemBuilder: (menuContext) => sessions
               .map(
-                (session) => PopupMenuItem<AiSession>(
+                (session) => PopupMenuItem<AiChatSessionView>(
                   value: session,
                   child: Row(
                     children: [

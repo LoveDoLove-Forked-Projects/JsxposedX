@@ -1,15 +1,16 @@
-import 'package:JsxposedX/core/models/ai_message.dart';
-import 'package:JsxposedX/core/models/ai_session.dart';
 import 'package:JsxposedX/features/ai/domain/contracts/ai_chat_tool_executor_contract.dart';
 import 'package:JsxposedX/features/ai/domain/contracts/ai_chat_tools_spec.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_session_context.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_response_issue.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_session_init_state.dart';
+import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
+import 'package:JsxposedX/features/ai/presentation/states/ai_chat_view_message.dart';
+import 'package:JsxposedX/features/ai/presentation/states/ai_chat_session_view.dart';
 
 class AiChatRuntimeState {
   const AiChatRuntimeState({
-    this.messages = const [],
-    this.protocolMessages = const [],
+    this.standardMessages = const [],
+    this.viewMessages = const [],
     this.sessions = const [],
     this.isStreaming = false,
     this.error,
@@ -27,9 +28,9 @@ class AiChatRuntimeState {
     this.toolExecutor,
   });
 
-  final List<AiMessage> messages;
-  final List<AiMessage> protocolMessages;
-  final List<AiSession> sessions;
+  final List<AiMessage> standardMessages;
+  final List<AiChatViewMessage> viewMessages;
+  final List<AiChatSessionView> sessions;
   final bool isStreaming;
   final String? error;
   final String? currentSessionId;
@@ -44,23 +45,24 @@ class AiChatRuntimeState {
   final int contextVersion;
   final AiChatToolsSpec? toolsSpec;
   final AiChatToolExecutorContract? toolExecutor;
-  List<AiMessage> get visibleMessages {
-    if (messages.length <= visibleMessageCount) {
-      return List<AiMessage>.unmodifiable(messages);
+  List<AiChatViewMessage> get visibleViewMessages {
+    if (viewMessages.length <= visibleMessageCount) {
+      return List<AiChatViewMessage>.unmodifiable(viewMessages);
     }
-    return List<AiMessage>.unmodifiable(
-      messages.sublist(messages.length - visibleMessageCount),
+    return List<AiChatViewMessage>.unmodifiable(
+      viewMessages.sublist(viewMessages.length - visibleMessageCount),
     );
   }
 
-  int get totalVisibleMessagesCount => messages.length;
+  int get totalVisibleMessagesCount => viewMessages.length;
 
   bool get canSend =>
       !isStreaming &&
       sessionInitState != AiSessionInitState.initializing &&
       sessionInitState != AiSessionInitState.failed;
 
-  bool get hasUserMessages => messages.any((message) => message.role == 'user');
+  bool get hasUserMessages =>
+      standardMessages.any((message) => message.role == AiMessageRole.user);
 
   bool get canRetryLastTurn =>
       !isStreaming && hasUserMessages && lastResponseIssue != null;
@@ -75,7 +77,7 @@ class AiChatRuntimeState {
       lastResponseIssue == AiResponseIssue.partialResponse &&
       sessionContext.hasPendingToolPhase;
 
-  AiMessage? get latestSessionSummary {
+  AiChatViewMessage? get latestSessionSummary {
     if (!sessionContext.sessionMemory.hasContent) {
       return null;
     }
@@ -97,7 +99,7 @@ class AiChatRuntimeState {
     write('工具发现', sessionContext.sessionMemory.toolFindings);
     write('待继续', sessionContext.sessionMemory.openHypotheses);
     write('阻塞', sessionContext.sessionMemory.blockers);
-    return AiMessage(
+    return AiChatViewMessage(
       id: 'context-summary',
       role: 'system',
       content: buffer.toString().trim(),
@@ -107,9 +109,9 @@ class AiChatRuntimeState {
   bool get hasSessionSummary => latestSessionSummary != null;
 
   AiChatRuntimeState copyWith({
-    List<AiMessage>? messages,
-    List<AiMessage>? protocolMessages,
-    List<AiSession>? sessions,
+    List<AiMessage>? standardMessages,
+    List<AiChatViewMessage>? viewMessages,
+    List<AiChatSessionView>? sessions,
     bool? isStreaming,
     Object? error = _runtimeStateSentinel,
     Object? currentSessionId = _runtimeStateSentinel,
@@ -126,8 +128,8 @@ class AiChatRuntimeState {
     Object? toolExecutor = _runtimeStateSentinel,
   }) {
     return AiChatRuntimeState(
-      messages: messages ?? this.messages,
-      protocolMessages: protocolMessages ?? this.protocolMessages,
+      standardMessages: standardMessages ?? this.standardMessages,
+      viewMessages: viewMessages ?? this.viewMessages,
       sessions: sessions ?? this.sessions,
       isStreaming: isStreaming ?? this.isStreaming,
       error: identical(error, _runtimeStateSentinel)

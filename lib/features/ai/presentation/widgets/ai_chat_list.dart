@@ -1,17 +1,20 @@
 import 'package:JsxposedX/core/extensions/context_extensions.dart';
-import 'package:JsxposedX/core/models/ai_message.dart';
 import 'package:JsxposedX/core/utils/url_helper.dart';
+import 'package:JsxposedX/common/pages/toast.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_response_issue.dart';
+import 'package:JsxposedX/features/ai/domain/models/ai_session_init_state.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/runtime/ai_chat_runtime_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/ai_chat_bubble.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_compact_scope.dart';
+import 'package:JsxposedX/features/ai/presentation/states/ai_chat_view_message.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 typedef AiChatBubbleBuilder =
     Widget Function({
-      required AiMessage message,
+      required AiChatViewMessage message,
       required String retryLabel,
       required VoidCallback onRetry,
       required String packageName,
@@ -19,7 +22,7 @@ typedef AiChatBubbleBuilder =
 
 typedef AiChatStreamingBubbleBuilder =
     Widget Function({
-      required AiMessage message,
+      required AiChatViewMessage message,
       required String retryLabel,
       required VoidCallback onRetry,
       required String packageName,
@@ -41,7 +44,7 @@ class AiChatList extends HookConsumerWidget {
     this.streamingBubbleBuilder,
   });
 
-  final List<AiMessage> messages;
+  final List<AiChatViewMessage> messages;
   final ScrollController scrollController;
   final String packageName;
   final bool isCompact;
@@ -56,6 +59,28 @@ class AiChatList extends HookConsumerWidget {
     final scopeCompact = AiChatCompactScope.of(context);
     final scopeScale = AiChatCompactScope.scaleOf(context);
     final effectiveCompact = isCompact || scopeCompact;
+    final chatState = ref.watch(
+      aiChatRuntimeProvider(packageName: packageName),
+    );
+    final chatNotifier = ref.read(
+      aiChatRuntimeProvider(packageName: packageName).notifier,
+    );
+    final showJumpToLatest = useState(false);
+
+    useEffect(() {
+      void updateJumpButton() {
+        if (!scrollController.hasClients) return;
+        final shouldShow = scrollController.offset > 120;
+        if (showJumpToLatest.value != shouldShow) {
+          showJumpToLatest.value = shouldShow;
+        }
+      }
+
+      scrollController.addListener(updateJumpButton);
+      updateJumpButton();
+      return () => scrollController.removeListener(updateJumpButton);
+    }, [scrollController]);
+
     if (messages.isEmpty) {
       return LayoutBuilder(
         builder: (context, constraints) {
@@ -90,12 +115,6 @@ class AiChatList extends HookConsumerWidget {
       );
     }
 
-    final chatState = ref.watch(
-      aiChatRuntimeProvider(packageName: packageName),
-    );
-    final chatNotifier = ref.read(
-      aiChatRuntimeProvider(packageName: packageName).notifier,
-    );
     final totalVisibleCount = chatState.totalVisibleMessagesCount;
     final hasMore =
         chatState.hasOlderMessages || messages.length < totalVisibleCount;
@@ -110,89 +129,240 @@ class AiChatList extends HookConsumerWidget {
               : context.l10n.aiContinue)
         : context.l10n.retry;
 
-    return ListView.builder(
-      controller: scrollController,
-      reverse: true,
-      padding: EdgeInsets.symmetric(
-        horizontal: (effectiveCompact ? 12 : 20) * scopeScale,
-        vertical: (effectiveCompact ? 6 : 10) * scopeScale,
+    final responseError =
+        chatState.error != null &&
+        !chatState.isStreaming &&
+        chatState.lastResponseIssue != null &&
+        chatState.sessionInitState == AiSessionInitState.ready;
+
+    return Column(
+      children: [
+        if (responseError)
+          _ChatErrorBanner(
+            detail: chatState.error!,
+            retryLabel: retryLabel,
+            onRetry: chatState.canRetryLastTurn
+                ? chatNotifier.retryLastTurn
+                : null,
+          ),
+        Expanded(
+          child: Stack(
+            children: [
+              ListView.builder(
+                controller: scrollController,
+                reverse: true,
+                padding: EdgeInsets.symmetric(
+                  horizontal: (effectiveCompact ? 12 : 20) * scopeScale,
+                  vertical: (effectiveCompact ? 6 : 10) * scopeScale,
+                ),
+                itemCount: reversedMessages.length + (hasMore ? 1 : 0),
+                cacheExtent: 500,
+                addAutomaticKeepAlives: false,
+                addRepaintBoundaries: true,
+                itemBuilder: (context, index) {
+                  if (index == reversedMessages.length) {
+                    return Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8 * scopeScale),
+                      child: TextButton(
+                        onPressed: chatNotifier.loadMore,
+                        child: Text(
+                          context.l10n.aiShowMoreMessages(remainingCount),
+                          style: TextStyle(color: context.colorScheme.primary),
+                        ),
+                      ),
+                    );
+                  }
+
+                  final message = reversedMessages[index];
+                  final shouldShowStreaming =
+                      index == 0 &&
+                      chatState.isStreaming &&
+                      message.role == 'assistant' &&
+                      !message.isError &&
+                      !message.isToolResultBubble;
+
+                  if (shouldShowStreaming) {
+                    if (streamingBubbleBuilder != null) {
+                      return RepaintBoundary(
+                        child: streamingBubbleBuilder!(
+                          message: message,
+                          retryLabel: retryLabel,
+                          onRetry: () =>
+                              chatNotifier.retryByMessageId(message.id),
+                          packageName: packageName,
+                          streamingContentStream:
+                              chatNotifier.streamingContentStream,
+                          streamingThinkingStream:
+                              chatNotifier.streamingThinkingStream,
+                        ),
+                      );
+                    }
+                    return _StreamingAiChatBubble(
+                      key: ValueKey(message.id),
+                      initialContent: message.content,
+                      role: message.role,
+                      isError: message.isError,
+                      isToolCalling: message.isToolResultBubble,
+                      retryLabel: retryLabel,
+                      streamingContentStream:
+                          chatNotifier.streamingContentStream,
+                      streamingThinkingStream:
+                          chatNotifier.streamingThinkingStream,
+                      onRetry: () => chatNotifier.retryByMessageId(message.id),
+                      packageName: packageName,
+                    );
+                  }
+
+                  return RepaintBoundary(
+                    child: bubbleBuilder != null
+                        ? bubbleBuilder!(
+                            message: message,
+                            retryLabel: retryLabel,
+                            onRetry: () =>
+                                chatNotifier.retryByMessageId(message.id),
+                            packageName: packageName,
+                          )
+                        : AiChatBubble(
+                            key: ValueKey(message.id),
+                            content: message.content,
+                            role: message.role,
+                            isError: message.isError,
+                            isToolCalling:
+                                message.isToolResultBubble &&
+                                !message.content.startsWith('✅') &&
+                                !message.content.startsWith('❌'),
+                            retryLabel: retryLabel,
+                            onRetry: () =>
+                                chatNotifier.retryByMessageId(message.id),
+                            packageName: packageName,
+                          ),
+                  );
+                },
+              ),
+              Positioned(
+                right: (effectiveCompact ? 14 : 20) * scopeScale,
+                bottom: (effectiveCompact ? 10 : 16) * scopeScale,
+                child: AnimatedScale(
+                  scale: showJumpToLatest.value ? 1 : 0,
+                  duration: const Duration(milliseconds: 160),
+                  child: IgnorePointer(
+                    ignoring: !showJumpToLatest.value,
+                    child: FloatingActionButton.small(
+                      heroTag: null,
+                      tooltip: context.isZh ? '回到最新消息' : 'Jump to latest',
+                      onPressed: () {
+                        scrollController.animateTo(
+                          0,
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                        );
+                      },
+                      child: const Icon(Icons.keyboard_double_arrow_down),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChatErrorBanner extends HookWidget {
+  const _ChatErrorBanner({
+    required this.detail,
+    required this.retryLabel,
+    required this.onRetry,
+  });
+
+  final String detail;
+  final String retryLabel;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scale = AiChatCompactScope.scaleOf(context);
+    final expanded = useState(false);
+    final color = context.colorScheme.error;
+    final canExpand = detail.length > 180;
+    return Container(
+      width: double.infinity,
+      margin: EdgeInsets.fromLTRB(16 * scale, 8 * scale, 16 * scale, 0),
+      padding: EdgeInsets.fromLTRB(12 * scale, 9 * scale, 8 * scale, 9 * scale),
+      decoration: BoxDecoration(
+        color: context.colorScheme.errorContainer.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(10 * scale),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
-      itemCount: reversedMessages.length + (hasMore ? 1 : 0),
-      cacheExtent: 500,
-      addAutomaticKeepAlives: false,
-      addRepaintBoundaries: true,
-      itemBuilder: (context, index) {
-        if (index == reversedMessages.length) {
-          return Padding(
-            padding: EdgeInsets.symmetric(vertical: 8 * scopeScale),
-            child: TextButton(
-              onPressed: chatNotifier.loadMore,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: 1 * scale),
+            child: Icon(
+              Icons.error_outline_rounded,
+              size: 18 * scale,
+              color: color,
+            ),
+          ),
+          SizedBox(width: 8 * scale),
+          Expanded(
+            child: GestureDetector(
+              onTap: canExpand ? () => expanded.value = !expanded.value : null,
+              onLongPress: () async {
+                await Clipboard.setData(ClipboardData(text: detail));
+                if (context.mounted) {
+                  ToastMessage.show(
+                    context.isZh ? '错误详情已复制' : 'Error details copied',
+                  );
+                }
+              },
               child: Text(
-                context.l10n.aiShowMoreMessages(remainingCount),
-                style: TextStyle(color: context.colorScheme.primary),
+                detail,
+                maxLines: expanded.value ? null : 3,
+                overflow: expanded.value ? null : TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: context.colorScheme.onErrorContainer,
+                  fontSize: 12 * scale,
+                  height: 1.35,
+                ),
               ),
             ),
-          );
-        }
-
-        final message = reversedMessages[index];
-        final shouldShowStreaming =
-            index == 0 &&
-            chatState.isStreaming &&
-            message.role == 'assistant' &&
-            !message.isError &&
-            !message.isToolResultBubble;
-
-        if (shouldShowStreaming) {
-          if (streamingBubbleBuilder != null) {
-            return RepaintBoundary(
-              child: streamingBubbleBuilder!(
-                message: message,
-                retryLabel: retryLabel,
-                onRetry: () => chatNotifier.retryByMessageId(message.id),
-                packageName: packageName,
-                streamingContentStream: chatNotifier.streamingContentStream,
-                streamingThinkingStream: chatNotifier.streamingThinkingStream,
+          ),
+          if (canExpand)
+            IconButton(
+              onPressed: () => expanded.value = !expanded.value,
+              tooltip: expanded.value
+                  ? (context.isZh ? '收起详情' : 'Collapse details')
+                  : (context.isZh ? '展开详情' : 'Expand details'),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: BoxConstraints(
+                minWidth: 30 * scale,
+                minHeight: 30 * scale,
               ),
-            );
-          }
-          return _StreamingAiChatBubble(
-            key: ValueKey(message.id),
-            initialContent: message.content,
-            role: message.role,
-            isError: message.isError,
-            isToolCalling: message.isToolResultBubble,
-            retryLabel: retryLabel,
-            streamingContentStream: chatNotifier.streamingContentStream,
-            streamingThinkingStream: chatNotifier.streamingThinkingStream,
-            onRetry: () => chatNotifier.retryByMessageId(message.id),
-            packageName: packageName,
-          );
-        }
-
-        return RepaintBoundary(
-          child: bubbleBuilder != null
-              ? bubbleBuilder!(
-                  message: message,
-                  retryLabel: retryLabel,
-                  onRetry: () => chatNotifier.retryByMessageId(message.id),
-                  packageName: packageName,
-                )
-              : AiChatBubble(
-                  key: ValueKey(message.id),
-                  content: message.content,
-                  role: message.role,
-                  isError: message.isError,
-                  isToolCalling:
-                      message.isToolResultBubble &&
-                      !message.content.startsWith('✅') &&
-                      !message.content.startsWith('❌'),
-                  retryLabel: retryLabel,
-                  onRetry: () => chatNotifier.retryByMessageId(message.id),
-                  packageName: packageName,
-                ),
-        );
-      },
+              icon: Icon(
+                expanded.value ? Icons.expand_less : Icons.expand_more,
+                size: 18 * scale,
+                color: color,
+              ),
+            ),
+          if (onRetry != null)
+            IconButton(
+              onPressed: onRetry,
+              tooltip: retryLabel,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: BoxConstraints(
+                minWidth: 30 * scale,
+                minHeight: 30 * scale,
+              ),
+              icon: Icon(Icons.refresh_rounded, size: 18 * scale, color: color),
+            ),
+        ],
+      ),
     );
   }
 }

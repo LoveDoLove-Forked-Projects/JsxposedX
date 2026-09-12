@@ -1,8 +1,8 @@
 import 'package:JsxposedX/common/widgets/custom_dIalog.dart';
 import 'package:JsxposedX/core/extensions/context_extensions.dart';
-import 'package:JsxposedX/core/models/ai_session.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/config/ai_config_query_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/runtime/ai_chat_runtime_provider.dart';
+import 'package:JsxposedX/features/ai/presentation/states/ai_chat_session_view.dart';
 import 'package:JsxposedX/features/app/presentation/providers/app_query_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -17,7 +17,9 @@ class AiReverseHeader extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final chatState = ref.watch(aiChatRuntimeProvider(packageName: packageName));
+    final chatState = ref.watch(
+      aiChatRuntimeProvider(packageName: packageName),
+    );
     final sessions = ref
         .read(aiChatRuntimeProvider(packageName: packageName).notifier)
         .getSessions();
@@ -73,27 +75,45 @@ class AiReverseHeader extends HookConsumerWidget {
               ),
             SizedBox(width: 12.w),
             Expanded(
-              child: PopupMenuButton<AiSession>(
+              child: PopupMenuButton<AiChatSessionView>(
                 offset: const Offset(0, 40),
                 tooltip: context.l10n.aiSwitchSession,
                 onSelected: (session) {
                   ref
                       .read(
-                        aiChatRuntimeProvider(packageName: packageName).notifier,
+                        aiChatRuntimeProvider(
+                          packageName: packageName,
+                        ).notifier,
                       )
                       .switchSession(session.id);
                 },
                 itemBuilder: (context) {
-                  return sessions.map((s) => PopupMenuItem(
-                    value: s,
-                    child: Row(
-                      children: [
-                        Icon(Icons.chat_bubble_outline_rounded, size: 16.sp, color: s.id == chatState.currentSessionId ? context.colorScheme.primary : null),
-                        SizedBox(width: 8.w),
-                        Expanded(child: Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
-                      ],
-                    ),
-                  )).toList();
+                  return sessions
+                      .map(
+                        (s) => PopupMenuItem(
+                          value: s,
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.chat_bubble_outline_rounded,
+                                size: 16.sp,
+                                color: s.id == chatState.currentSessionId
+                                    ? context.colorScheme.primary
+                                    : null,
+                              ),
+                              SizedBox(width: 8.w),
+                              Expanded(
+                                child: Text(
+                                  s.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList();
                 },
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -103,7 +123,15 @@ class AiReverseHeader extends HookConsumerWidget {
                       children: [
                         Flexible(
                           child: Text(
-                            chatState.currentSessionId != null ? (sessions.firstWhere((s) => s.id == chatState.currentSessionId, orElse: () => sessions.first).name) : (app?.name ?? context.l10n.aiIdentifying),
+                            chatState.currentSessionId != null
+                                ? (sessions
+                                      .firstWhere(
+                                        (s) =>
+                                            s.id == chatState.currentSessionId,
+                                        orElse: () => sessions.first,
+                                      )
+                                      .name)
+                                : (app?.name ?? context.l10n.aiIdentifying),
                             style: TextStyle(
                               fontSize: 16.sp,
                               fontWeight: FontWeight.bold,
@@ -113,7 +141,11 @@ class AiReverseHeader extends HookConsumerWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        Icon(Icons.arrow_drop_down, size: 20.sp, color: context.theme.hintColor),
+                        Icon(
+                          Icons.arrow_drop_down,
+                          size: 20.sp,
+                          color: context.theme.hintColor,
+                        ),
                       ],
                     ),
                     Text(
@@ -139,7 +171,9 @@ class AiReverseHeader extends HookConsumerWidget {
                                   color: Colors.orange.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(999.r),
                                   border: Border.all(
-                                    color: Colors.orange.withValues(alpha: 0.22),
+                                    color: Colors.orange.withValues(
+                                      alpha: 0.22,
+                                    ),
                                   ),
                                 ),
                                 child: Text(
@@ -151,7 +185,8 @@ class AiReverseHeader extends HookConsumerWidget {
                                   ),
                                 ),
                               ),
-                            ):SizedBox(),
+                            )
+                          : SizedBox(),
 
                       error: (_, __) => const SizedBox.shrink(),
                       loading: () => const SizedBox.shrink(),
@@ -168,12 +203,17 @@ class AiReverseHeader extends HookConsumerWidget {
                   icon: Icons.add_comment_rounded,
                   tooltip: context.l10n.aiNewSession,
                   onTap: () async {
-                    final nameController = TextEditingController(text: "${context.l10n.aiNewSession} ${DateFormat('MM-dd HH:mm').format(DateTime.now())}");
+                    final nameController = TextEditingController(
+                      text:
+                          "${context.l10n.aiNewSession} ${DateFormat('MM-dd HH:mm').format(DateTime.now())}",
+                    );
                     final name = await CustomDialog.show<String>(
                       title: Text(context.l10n.aiNewSession),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: context.isDark ? context.colorScheme.surfaceContainerLow : Colors.white,
+                          color: context.isDark
+                              ? context.colorScheme.surfaceContainerLow
+                              : Colors.white,
                           borderRadius: BorderRadius.circular(12.r),
                         ),
                         child: TextField(
@@ -182,10 +222,15 @@ class AiReverseHeader extends HookConsumerWidget {
                           decoration: InputDecoration(
                             labelText: context.l10n.aiSessionName,
                             hintText: context.l10n.aiSessionNameHint,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 16.w,
+                              vertical: 12.h,
+                            ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12.r),
-                              borderSide: BorderSide(color: context.theme.dividerColor),
+                              borderSide: BorderSide(
+                                color: context.theme.dividerColor,
+                              ),
                             ),
                           ),
                         ),
@@ -196,7 +241,9 @@ class AiReverseHeader extends HookConsumerWidget {
                           child: Text(context.l10n.cancel),
                         ),
                         TextButton(
-                          onPressed: () => SmartDialog.dismiss(result: nameController.text.trim()),
+                          onPressed: () => SmartDialog.dismiss(
+                            result: nameController.text.trim(),
+                          ),
                           child: Text(context.l10n.confirm),
                         ),
                       ],
@@ -280,7 +327,9 @@ class _HeaderActionButton extends StatelessWidget {
         child: Container(
           padding: EdgeInsets.all(8.w),
           decoration: BoxDecoration(
-            color: (color ?? context.colorScheme.primary).withValues(alpha: 0.1),
+            color: (color ?? context.colorScheme.primary).withValues(
+              alpha: 0.1,
+            ),
             borderRadius: BorderRadius.circular(12.r),
           ),
           child: Icon(

@@ -2,30 +2,25 @@ import 'dart:async';
 
 import 'package:JsxposedX/core/enums/ai_api_type.dart';
 import 'package:JsxposedX/core/models/ai_config.dart';
-import 'package:JsxposedX/core/models/ai_message.dart';
-import 'package:JsxposedX/core/models/ai_session.dart';
-import 'package:JsxposedX/core/networks/http_service.dart';
-import 'package:JsxposedX/core/providers/pinia_provider.dart';
 import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_controller.dart';
 import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_environment.dart';
 import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_state.dart';
-import 'package:JsxposedX/features/ai/data/datasources/chat/ai_chat_action_datasource.dart';
-import 'package:JsxposedX/features/ai/data/repositories/chat/ai_chat_action_repository_impl.dart';
 import 'package:JsxposedX/features/ai/domain/contracts/ai_chat_tool_executor_contract.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_environment_snapshot.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_session_context.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_response_issue.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_session_init_state.dart';
-import 'package:JsxposedX/features/ai/domain/models/ai_thinking_markup.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_tool_call.dart';
 import 'package:JsxposedX/features/ai/domain/repositories/ai_conversation_repository.dart';
-import 'package:JsxposedX/features/ai/domain/repositories/chat/ai_chat_action_repository.dart';
 import 'package:JsxposedX/features/ai/domain/services/ai_multimodal_message_codec.dart';
 import 'package:JsxposedX/features/ai/infrastructure/migration/legacy_ai_conversation_migrator.dart';
+import 'package:JsxposedX/features/ai/infrastructure/services/ai_connection_test_service.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/chat/ai_chat_query_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/config/ai_config_query_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/system/ai_system_providers.dart';
-import 'package:JsxposedX/features/ai/presentation/states/ai_chat_action_state.dart';
+import 'package:JsxposedX/features/ai/presentation/mappers/ai_chat_view_message_mapper.dart';
+import 'package:JsxposedX/features/ai/presentation/states/ai_chat_runtime_state.dart';
+import 'package:JsxposedX/features/ai/presentation/states/ai_chat_session_view.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -40,7 +35,7 @@ Future<bool> aiStatus(Ref ref) async {
   final config = ref.watch(aiConfigProvider).value;
   if (config == null || config.apiUrl.isEmpty) return false;
   try {
-    await ref.read(aiChatActionRepositoryProvider).testConnection(config);
+    await ref.read(aiConnectionTestServiceProvider).test(config);
     return true;
   } catch (_) {
     return false;
@@ -48,22 +43,13 @@ Future<bool> aiStatus(Ref ref) async {
 }
 
 @riverpod
-AiChatActionDatasource aiChatActionDatasource(Ref ref) {
-  return AiChatActionDatasource(
-    httpService: ref.watch(httpServiceProvider),
-    storage: ref.watch(piniaStorageLocalProvider),
-  );
-}
-
-@riverpod
-AiChatActionRepository aiChatActionRepository(Ref ref) {
-  return AiChatActionRepositoryImpl(
-    dataSource: ref.watch(aiChatActionDatasourceProvider),
-  );
+AiConnectionTestService aiConnectionTestService(Ref ref) {
+  return AiConnectionTestService(ref.watch(aiDioProvider));
 }
 
 @riverpod
 class AiChatAction extends _$AiChatAction {
+  static const _viewMapper = AiChatViewMessageMapper();
   final StreamController<String> _streamingContentController =
       StreamController<String>.broadcast();
   final StreamController<bool> _streamingThinkingController =
@@ -83,7 +69,7 @@ class AiChatAction extends _$AiChatAction {
       _streamingThinkingController.stream;
 
   @override
-  AiChatActionState build({required String packageName}) {
+  AiChatRuntimeState build({required String packageName}) {
     _disposed = false;
     ref.onDispose(() {
       _disposed = true;
@@ -105,7 +91,7 @@ class AiChatAction extends _$AiChatAction {
       unawaited(_attachSession());
     });
     Future.microtask(_initializeSessions);
-    return const AiChatActionState();
+    return const AiChatRuntimeState();
   }
 
   void beginSessionInitialization() {
@@ -221,7 +207,7 @@ class AiChatAction extends _$AiChatAction {
     }
   }
 
-  Future<List<AiSession>> getSessionsAsync() async {
+  Future<List<AiChatSessionView>> getSessionsAsync() async {
     final config = ref.read(aiConfigProvider).value;
     if (config != null) await _migrateLegacySessions(config);
     final repository = ref.read(aiConversationRepositoryV2Provider);
@@ -241,26 +227,24 @@ class AiChatAction extends _$AiChatAction {
         conversations
             .where((conversation) => conversation.scopeId == packageName)
             .map(
-              (conversation) => AiSession(
+              (conversation) => AiChatSessionView(
                 id: conversation.id,
                 name: conversation.title,
-                packageName: packageName,
-                lastUpdateTime: conversation.updatedAt.toLocal(),
-                lastMessage: '',
+                scopeId: packageName,
+                updatedAt: conversation.updatedAt.toLocal(),
               ),
             )
             .toList(growable: true)
-          ..sort(
-            (left, right) =>
-                right.lastUpdateTime.compareTo(left.lastUpdateTime),
-          );
+          ..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
     if (!_disposed) {
-      state = state.copyWith(sessions: List<AiSession>.unmodifiable(sessions));
+      state = state.copyWith(
+        sessions: List<AiChatSessionView>.unmodifiable(sessions),
+      );
     }
     return sessions;
   }
 
-  List<AiSession> getSessions() => state.sessions;
+  List<AiChatSessionView> getSessions() => state.sessions;
 
   Future<void> switchSession(String sessionId) async {
     if (state.isStreaming) {
@@ -277,8 +261,8 @@ class AiChatAction extends _$AiChatAction {
     _clearStreaming();
     state = state.copyWith(
       currentSessionId: sessionId,
-      protocolMessages: const [],
-      messages: const [],
+      standardMessages: const [],
+      viewMessages: const [],
       visibleMessageCount: 10,
       hasOlderMessages: false,
       error: null,
@@ -290,9 +274,6 @@ class AiChatAction extends _$AiChatAction {
       contextStats: const AiChatContextStats(),
       contextVersion: AiChatSessionContext.currentVersion,
     );
-    await ref
-        .read(aiChatActionRepositoryProvider)
-        .saveLastActiveSessionId(packageName, sessionId);
     await _attachSession();
   }
 
@@ -344,24 +325,23 @@ class AiChatAction extends _$AiChatAction {
 
   void _applySessionState(AiChatSessionState next) {
     if (_disposed || next.conversationId != state.currentSessionId) return;
-    final protocol = next.messages
-        .map(LegacyAiConversationMigrator.toLegacyMessage)
-        .toList(growable: false);
-    var display = _displayMessages(protocol);
+    var display = _viewMapper.mapHistory(next.messages);
     final snapshot = next.runSnapshot;
     if (snapshot != null) {
-      final content = _displayContent(snapshot.reasoning, snapshot.text);
       final id = next.activeAssistantMessageId ?? 'standard-streaming';
-      final streaming = AiMessage(id: id, role: 'assistant', content: content);
+      final streaming = _viewMapper.mapStreaming(
+        messageId: id,
+        snapshot: snapshot,
+      );
       final index = display.indexWhere((message) => message.id == id);
       if (index < 0) {
         display = [...display, streaming];
       } else {
-        final updated = List<AiMessage>.from(display);
+        final updated = List.of(display);
         updated[index] = streaming;
         display = updated;
       }
-      _pushStreaming(content);
+      _pushStreaming(streaming.content);
       _pushThinking(snapshot.reasoning.isNotEmpty && snapshot.text.isEmpty);
     }
 
@@ -372,8 +352,8 @@ class AiChatAction extends _$AiChatAction {
     if (!streaming && snapshot == null) _clearStreaming();
     state = state.copyWith(
       sessions: _updatedSessions(next.conversation),
-      protocolMessages: List<AiMessage>.unmodifiable(protocol),
-      messages: List<AiMessage>.unmodifiable(display),
+      standardMessages: List<standard.AiMessage>.unmodifiable(next.messages),
+      viewMessages: List.unmodifiable(display),
       hasOlderMessages: next.hasOlderMessages,
       isStreaming: streaming,
       error: next.failure == null
@@ -383,26 +363,25 @@ class AiChatAction extends _$AiChatAction {
     );
   }
 
-  List<AiSession> _updatedSessions(standard.AiConversation? conversation) {
+  List<AiChatSessionView> _updatedSessions(
+    standard.AiConversation? conversation,
+  ) {
     if (conversation == null) return state.sessions;
-    final sessions = List<AiSession>.from(state.sessions);
+    final sessions = List<AiChatSessionView>.from(state.sessions);
     final index = sessions.indexWhere((item) => item.id == conversation.id);
-    final mapped = AiSession(
+    final mapped = AiChatSessionView(
       id: conversation.id,
       name: conversation.title,
-      packageName: packageName,
-      lastUpdateTime: conversation.updatedAt.toLocal(),
-      lastMessage: '',
+      scopeId: packageName,
+      updatedAt: conversation.updatedAt.toLocal(),
     );
     if (index < 0) {
       sessions.add(mapped);
     } else {
       sessions[index] = mapped;
     }
-    sessions.sort(
-      (left, right) => right.lastUpdateTime.compareTo(left.lastUpdateTime),
-    );
-    return List<AiSession>.unmodifiable(sessions);
+    sessions.sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
+    return List<AiChatSessionView>.unmodifiable(sessions);
   }
 
   AiResponseIssue? _issueFor(standard.AiFailure? failure) {
@@ -418,11 +397,11 @@ class AiChatAction extends _$AiChatAction {
   }
 
   void loadMore() {
-    if (state.visibleMessageCount < state.messages.length) {
+    if (state.visibleMessageCount < state.viewMessages.length) {
       state = state.copyWith(
         visibleMessageCount: (state.visibleMessageCount + 10).clamp(
           0,
-          state.messages.length,
+          state.viewMessages.length,
         ),
       );
       return;
@@ -439,7 +418,7 @@ class AiChatAction extends _$AiChatAction {
       state = state.copyWith(
         visibleMessageCount: (state.visibleMessageCount + 10).clamp(
           0,
-          state.messages.length,
+          state.viewMessages.length,
         ),
       );
     } catch (error) {
@@ -481,17 +460,16 @@ class AiChatAction extends _$AiChatAction {
     state = state.copyWith(
       currentSessionId: id,
       sessions: [
-        AiSession(
+        AiChatSessionView(
           id: id,
           name: title,
-          packageName: packageName,
-          lastUpdateTime: now,
-          lastMessage: '',
+          scopeId: packageName,
+          updatedAt: now,
         ),
         ...state.sessions,
       ],
-      protocolMessages: const [],
-      messages: const [],
+      standardMessages: const [],
+      viewMessages: const [],
       visibleMessageCount: 10,
       hasOlderMessages: false,
       error: null,
@@ -503,9 +481,6 @@ class AiChatAction extends _$AiChatAction {
       contextStats: const AiChatContextStats(),
       contextVersion: AiChatSessionContext.currentVersion,
     );
-    await ref
-        .read(aiChatActionRepositoryProvider)
-        .saveLastActiveSessionId(packageName, id);
     await _attachSession();
   }
 
@@ -560,14 +535,20 @@ class AiChatAction extends _$AiChatAction {
     required String updatedText,
   }) async {
     if (state.isStreaming) return;
-    final index = state.protocolMessages.indexWhere(
-      (message) => message.id == messageId && message.role == 'user',
+    final index = state.standardMessages.indexWhere(
+      (message) =>
+          message.id == messageId &&
+          message.role == standard.AiMessageRole.user,
     );
     if (index < 0) return;
-    final original = state.protocolMessages[index];
-    if (!AiMultimodalMessageCodec.canEditText(original.content)) return;
+    final original = state.standardMessages[index];
+    final originalText = original.parts
+        .whereType<standard.AiTextPart>()
+        .map((part) => part.text)
+        .join();
+    if (!AiMultimodalMessageCodec.canEditText(originalText)) return;
     final content = AiMultimodalMessageCodec.replaceUserText(
-      original.content,
+      originalText,
       updatedText,
     );
     if (content.trim().isEmpty) return;
@@ -606,8 +587,8 @@ class AiChatAction extends _$AiChatAction {
 
   Future<void> retryLastTurn() async {
     if (state.isStreaming || !state.hasUserMessages) return;
-    final lastUser = state.messages.lastWhere(
-      (message) => message.role == 'user',
+    final lastUser = state.standardMessages.lastWhere(
+      (message) => message.role == standard.AiMessageRole.user,
     );
     await retryByMessageId(lastUser.id);
   }
@@ -641,7 +622,7 @@ class AiChatAction extends _$AiChatAction {
     await ref
         .read(aiConversationRepositoryV2Provider)
         .deleteConversation(sessionId);
-    final remaining = List<AiSession>.from(state.sessions)
+    final remaining = List<AiChatSessionView>.from(state.sessions)
       ..removeWhere((session) => session.id == sessionId);
     if (state.currentSessionId != sessionId) {
       state = state.copyWith(sessions: List.unmodifiable(remaining));
@@ -656,8 +637,8 @@ class AiChatAction extends _$AiChatAction {
     state = state.copyWith(
       sessions: const [],
       currentSessionId: null,
-      messages: const [],
-      protocolMessages: const [],
+      standardMessages: const [],
+      viewMessages: const [],
       visibleMessageCount: 10,
       hasOlderMessages: false,
       isStreaming: false,
@@ -669,9 +650,6 @@ class AiChatAction extends _$AiChatAction {
       contextStats: const AiChatContextStats(),
       contextVersion: AiChatSessionContext.currentVersion,
     );
-    await ref
-        .read(aiChatActionRepositoryProvider)
-        .clearLastActiveSessionId(packageName);
   }
 
   Future<void> deleteHistory() async {
@@ -684,18 +662,18 @@ class AiChatAction extends _$AiChatAction {
   }
 
   void revealMessage(String messageId) {
-    final index = state.messages.indexWhere(
+    final index = state.viewMessages.indexWhere(
       (message) => message.id == messageId,
     );
     if (index < 0) return;
-    final required = state.messages.length - index;
+    final required = state.viewMessages.length - index;
     if (required > state.visibleMessageCount) {
       state = state.copyWith(visibleMessageCount: required);
     }
   }
 
   Future<String> testConnection(AiConfig config) {
-    return ref.read(aiChatActionRepositoryProvider).testConnection(config);
+    return ref.read(aiConnectionTestServiceProvider).test(config);
   }
 
   AiChatSessionController? _readyController({bool showError = true}) {
@@ -719,81 +697,6 @@ class AiChatAction extends _$AiChatAction {
       conversationRepository: ref.read(aiConversationRepositoryV2Provider),
     ).migratePackage(packageName: packageName, config: config);
     _migratedPackages.add(packageName);
-  }
-
-  List<AiMessage> _displayMessages(List<AiMessage> protocol) {
-    final display = <AiMessage>[];
-    final calls = <String, AiToolCall>{};
-    final order = <String>[];
-
-    void flushPending() {
-      for (final id in order) {
-        final call = calls[id];
-        if (call == null) continue;
-        display.add(
-          AiMessage(
-            id: 'tool-pending-$id',
-            role: 'assistant',
-            content: '⏳ `${call.name}`:',
-            isToolResultBubble: true,
-          ),
-        );
-      }
-      calls.clear();
-      order.clear();
-    }
-
-    for (final message in protocol) {
-      if (message.isSessionSummary) continue;
-      if (message.role == 'assistant' && message.hasToolCalls) {
-        flushPending();
-        for (final raw in message.toolCalls ?? const []) {
-          final call = AiToolCall.fromJson(raw);
-          if (call.id.isEmpty) continue;
-          calls[call.id] = call;
-          order.add(call.id);
-        }
-        continue;
-      }
-      if (message.role == 'tool') {
-        final id = message.toolCallId;
-        final call = id == null ? null : calls.remove(id);
-        if (call != null) {
-          order.remove(id);
-          display.add(
-            AiMessage(
-              id: 'tool-result-${message.id}',
-              role: 'assistant',
-              content:
-                  '${message.isError ? '❌' : '✅'} `${call.name}`:\n\n${message.content}',
-              isToolResultBubble: true,
-            ),
-          );
-        }
-        continue;
-      }
-      flushPending();
-      if (!message.shouldDisplayInChatList) continue;
-      if (message.role == 'assistant' &&
-          message.reasoningContent?.trim().isNotEmpty == true) {
-        display.add(
-          message.copyWith(
-            content: _displayContent(
-              message.reasoningContent!,
-              message.content,
-            ),
-          ),
-        );
-      } else {
-        display.add(message);
-      }
-    }
-    flushPending();
-    return display;
-  }
-
-  String _displayContent(String reasoning, String answer) {
-    return AiThinkingMarkup.compose(thinking: reasoning, answer: answer);
   }
 
   void _pushStreaming(String content) {

@@ -56,7 +56,7 @@ class AiReversePage extends HookConsumerWidget {
 
     final lastMessageId = useRef<String?>(null);
     useEffect(() {
-      final visibleMessages = chatState.visibleMessages;
+      final visibleMessages = chatState.visibleViewMessages;
       if (visibleMessages.isNotEmpty) {
         final currentLastId = visibleMessages.last.id;
         final isNewMessage = lastMessageId.value != currentLastId;
@@ -74,11 +74,13 @@ class AiReversePage extends HookConsumerWidget {
         }
       }
       return null;
-    }, [chatState.visibleMessages.length]);
+    }, [chatState.visibleViewMessages.length]);
 
     useEffect(() {
       const followThreshold = 80.0;
-      final subscription = chatNotifier.streamingContentStream.listen((content) {
+      final subscription = chatNotifier.streamingContentStream.listen((
+        content,
+      ) {
         if (content.isEmpty || !scrollController.hasClients) {
           return;
         }
@@ -131,7 +133,7 @@ class AiReversePage extends HookConsumerWidget {
                   onPageChanged: (page) => currentPage.value = page,
                   children: [
                     AiChatList(
-                      messages: chatState.visibleMessages,
+                      messages: chatState.visibleViewMessages,
                       scrollController: scrollController,
                       packageName: packageName,
                     ),
