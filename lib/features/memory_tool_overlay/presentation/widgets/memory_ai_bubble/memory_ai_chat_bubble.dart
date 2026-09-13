@@ -20,6 +20,9 @@ class MemoryAiChatBubble extends BaseAiChatBubble {
     super.packageName,
     super.retryLabel,
     super.loadingHint,
+    super.streaming,
+    super.onEdit,
+    super.rawDetails,
     this.isToolResultBubble = false,
   });
 
@@ -36,6 +39,9 @@ class MemoryAiChatBubble extends BaseAiChatBubble {
       packageName: packageName,
       retryLabel: retryLabel,
       loadingHint: loadingHint,
+      streaming: streaming,
+      onEdit: onEdit,
+      rawDetails: rawDetails,
       isToolResultBubble: isToolResultBubble,
     );
   }
@@ -134,6 +140,7 @@ class MemoryAiStreamingChatBubble extends HookWidget {
       onRetry: onRetry,
       packageName: packageName,
       loadingHint: isThinking.value ? _memoryLoadingHint(context) : null,
+      streaming: true,
     );
   }
 }

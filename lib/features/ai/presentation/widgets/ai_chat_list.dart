@@ -237,6 +237,14 @@ class AiChatList extends HookConsumerWidget {
                             onRetry: () =>
                                 chatNotifier.retryByMessageId(message.id),
                             packageName: packageName,
+                            onEdit: message.role == 'user'
+                                ? () => _editAndResendMessage(
+                                    context,
+                                    message,
+                                    chatNotifier.editUserMessageAndResend,
+                                  )
+                                : null,
+                            rawDetails: message.rawDetails,
                           ),
                   );
                 },
@@ -270,6 +278,45 @@ class AiChatList extends HookConsumerWidget {
       ],
     );
   }
+}
+
+Future<void> _editAndResendMessage(
+  BuildContext context,
+  AiChatViewMessage message,
+  Future<void> Function({
+    required String messageId,
+    required String updatedText,
+  }) onSubmit,
+) async {
+  final controller = TextEditingController(text: message.content);
+  final updated = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(context.isZh ? '编辑消息' : 'Edit message'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        minLines: 2,
+        maxLines: 8,
+        decoration: InputDecoration(
+          hintText: context.isZh ? '输入新内容' : 'Enter new content',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: Text(context.l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext, controller.text),
+          child: Text(context.isZh ? '发送' : 'Send'),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  if (updated == null || updated.trim().isEmpty || updated == message.content) return;
+  await onSubmit(messageId: message.id, updatedText: updated.trim());
 }
 
 class _ChatErrorBanner extends HookWidget {
@@ -576,9 +623,11 @@ class _StreamingAiChatBubble extends HookWidget {
         retryLabel: retryLabel,
         onRetry: onRetry,
         packageName: packageName,
+        streaming: true,
         loadingHint: isThinking.value
             ? (context.isZh ? 'AI 正在深度思考...' : 'AI is thinking deeply...')
             : null,
+        rawDetails: null,
       ),
     );
   }

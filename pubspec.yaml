@@ -51,6 +51,7 @@ dependencies:
   flutter_markdown: ^0.7.7+1
   uuid: ^4.5.3
   url_launcher: ^6.3.2
+  share_plus: ^10.1.4
   custom_pop_up_menu: ^1.2.4
   popover: ^0.4.0
   file_picker: ^10.3.10

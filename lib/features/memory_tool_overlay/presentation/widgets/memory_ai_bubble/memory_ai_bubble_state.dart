@@ -11,6 +11,9 @@ class MemoryAiBubbleState extends BubbleState {
     required this.isToolResultBubble,
     super.retryLabel,
     super.loadingHint,
+    super.streaming,
+    super.onEdit,
+    super.rawDetails,
   });
 
   final bool isToolResultBubble;

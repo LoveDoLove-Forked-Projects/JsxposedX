@@ -14,6 +14,9 @@ abstract class BaseAiChatBubble extends StatelessWidget {
   final String? packageName;
   final String? retryLabel;
   final String? loadingHint;
+  final bool streaming;
+  final VoidCallback? onEdit;
+  final String? rawDetails;
 
   const BaseAiChatBubble({
     super.key,
@@ -25,6 +28,9 @@ abstract class BaseAiChatBubble extends StatelessWidget {
     this.packageName,
     this.retryLabel,
     this.loadingHint,
+    this.streaming = false,
+    this.onEdit,
+    this.rawDetails,
   });
 
   @protected
@@ -38,6 +44,9 @@ abstract class BaseAiChatBubble extends StatelessWidget {
       packageName: packageName,
       retryLabel: retryLabel,
       loadingHint: loadingHint,
+      streaming: streaming,
+      onEdit: onEdit,
+      rawDetails: rawDetails,
     );
   }
 
@@ -82,5 +91,8 @@ class AiChatBubble extends BaseAiChatBubble {
     super.packageName,
     super.retryLabel,
     super.loadingHint,
+    super.streaming,
+    super.onEdit,
+    super.rawDetails,
   });
 }

@@ -1,6 +1,7 @@
 import 'package:JsxposedX/common/pages/toast.dart';
 import 'package:JsxposedX/common/widgets/app_bottom_sheet.dart';
 import 'package:JsxposedX/core/extensions/context_extensions.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_compact_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +21,9 @@ abstract class BaseBubbleToolbarPart {
     BuildContext context, {
     required String title,
     required String text,
+    VoidCallback? onRetry,
+    VoidCallback? onEdit,
+    String? rawDetails,
   }) async {
     final normalized = text.trim();
     if (normalized.isEmpty) {
@@ -40,6 +44,45 @@ abstract class BaseBubbleToolbarPart {
               handleCopyToClipboard(context, normalized);
             },
           ),
+          _BubbleActionTile(
+            icon: Icons.share_rounded,
+            title: context.isZh ? '系统分享' : 'Share',
+            onTap: () async {
+              Navigator.of(context).pop();
+              await Share.share(normalized, subject: title);
+            },
+          ),
+          if (onRetry != null)
+            _BubbleActionTile(
+              icon: Icons.refresh_rounded,
+              title: context.l10n.retry,
+              onTap: () {
+                Navigator.of(context).pop();
+                onRetry();
+              },
+            ),
+          if (onEdit != null)
+            _BubbleActionTile(
+              icon: Icons.edit_rounded,
+              title: context.isZh ? '编辑并重新发送' : 'Edit and resend',
+              onTap: () {
+                Navigator.of(context).pop();
+                onEdit();
+              },
+            ),
+          if (rawDetails != null && rawDetails.trim().isNotEmpty)
+            _BubbleActionTile(
+              icon: Icons.receipt_long_rounded,
+              title: context.isZh ? '查看原始响应' : 'View raw response',
+              onTap: () {
+                Navigator.of(context).pop();
+                showTextSelectionSheet(
+                  context,
+                  title: context.isZh ? '原始响应' : 'Raw response',
+                  text: rawDetails,
+                );
+              },
+            ),
           _BubbleActionTile(
             icon: Icons.text_fields_rounded,
             title: context.l10n.aiBubbleSelectText,

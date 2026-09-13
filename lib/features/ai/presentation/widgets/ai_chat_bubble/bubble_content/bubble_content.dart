@@ -37,7 +37,16 @@ abstract class BaseBubbleContentPart {
     if (state.isToolCalling) {
       return buildToolCalling(context, state);
     }
-    return buildMarkdown(context, state, toolbarPart: toolbarPart);
+    final markdown = buildMarkdown(context, state, toolbarPart: toolbarPart);
+    if (!state.streaming) return markdown;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        markdown,
+        const _StreamingCursor(),
+      ],
+    );
   }
 
   @protected
@@ -176,6 +185,9 @@ abstract class BaseBubbleContentPart {
         context,
         title: actionTitle ?? context.l10n.aiBubbleAssistantTextTitle,
         text: markdown,
+        onRetry: state.isUser ? null : state.onRetry,
+        onEdit: state.isUser ? state.onEdit : null,
+        rawDetails: state.rawDetails,
       ),
       child: MarkdownBody(
         data: markdown,
@@ -197,6 +209,33 @@ abstract class BaseBubbleContentPart {
 
 class DefaultBubbleContentPart extends BaseBubbleContentPart {
   const DefaultBubbleContentPart();
+}
+
+class _StreamingCursor extends StatefulWidget {
+  const _StreamingCursor();
+
+  @override
+  State<_StreamingCursor> createState() => _StreamingCursorState();
+}
+
+class _StreamingCursorState extends State<_StreamingCursor>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 520),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+    opacity: Tween<double>(begin: 0.25, end: 1).animate(_controller),
+    child: const Text('▍'),
+  );
 }
 
 class _ThinkingMarkdownContent extends HookWidget {
@@ -289,6 +328,9 @@ class _ThinkingMarkdownContent extends HookWidget {
                         context,
                         title: context.l10n.aiBubbleThinkingTitle,
                         text: thinkingContent,
+                        onRetry: state.isUser ? null : state.onRetry,
+                        onEdit: null,
+                        rawDetails: state.rawDetails,
                       ),
                       child: MarkdownBody(
                         data: thinkingContent,
@@ -317,6 +359,9 @@ class _ThinkingMarkdownContent extends HookWidget {
               context,
               title: context.l10n.aiBubbleAnswerTitle,
               text: answerContent,
+              onRetry: state.isUser ? null : state.onRetry,
+              onEdit: null,
+              rawDetails: state.rawDetails,
             ),
             child: MarkdownBody(
               data: answerContent,

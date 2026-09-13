@@ -10,6 +10,9 @@ class BubbleState {
   final String? packageName;
   final String? retryLabel;
   final String? loadingHint;
+  final bool streaming;
+  final VoidCallback? onEdit;
+  final String? rawDetails;
 
   const BubbleState({
     required this.content,
@@ -20,6 +23,9 @@ class BubbleState {
     required this.packageName,
     this.retryLabel,
     this.loadingHint,
+    this.streaming = false,
+    this.onEdit,
+    this.rawDetails,
   });
 
   bool get isUser => role == 'user';

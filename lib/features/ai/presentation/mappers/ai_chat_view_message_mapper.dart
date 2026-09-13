@@ -103,7 +103,23 @@ class AiChatViewMessageMapper {
         answer: snapshot.text,
       ),
       isError: snapshot.status == AiStreamStatus.failed,
+      rawDetails: _snapshotDetails(snapshot),
     );
+  }
+
+  static String _snapshotDetails(AiStreamSnapshot snapshot) {
+    final buffer = StringBuffer()
+      ..writeln('request_id: ${snapshot.requestId}')
+      ..writeln('sequence: ${snapshot.sequence}')
+      ..writeln('status: ${snapshot.status.name}');
+    if (snapshot.finishReason != null) buffer.writeln('finish_reason: ${snapshot.finishReason!.name}');
+    if (snapshot.usage != null) buffer.writeln('usage: ${snapshot.usage}');
+    for (final call in snapshot.toolCalls) {
+      buffer.writeln('tool: ${call.name} (${call.id ?? 'pending'})');
+      if (call.argumentsJson.isNotEmpty) buffer.writeln('arguments: ${call.argumentsJson}');
+    }
+    if (snapshot.failure != null) buffer.writeln('failure: ${snapshot.failure}');
+    return buffer.toString().trim();
   }
 
   static String _failureDetail(AiFailure? failure) {
