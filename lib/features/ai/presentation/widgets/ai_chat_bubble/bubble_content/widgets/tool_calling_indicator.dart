@@ -29,6 +29,13 @@ class ToolCallingIndicator extends HookWidget {
         ? context.l10n.aiToolNameClasses
         : null;
 
+    final normalized = content.toLowerCase();
+    final status = normalized.contains('argument') || normalized.contains('参数')
+        ? (context.isZh ? '正在准备工具参数' : 'Preparing tool arguments')
+        : normalized.contains('execute') || normalized.contains('执行')
+        ? (context.isZh ? '工具执行中' : 'Tool is running')
+        : (context.isZh ? '正在调用工具' : 'Calling tool');
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -43,8 +50,8 @@ class ToolCallingIndicator extends HookWidget {
         SizedBox(width: 8 * scale),
         Text(
           toolName != null
-              ? context.l10n.aiToolReading(toolName)
-              : context.l10n.aiToolCalling,
+              ? '$status · ${context.l10n.aiToolReading(toolName)}'
+              : status,
           style: TextStyle(
             fontSize: 13 * scale,
             color: context.colorScheme.primary,

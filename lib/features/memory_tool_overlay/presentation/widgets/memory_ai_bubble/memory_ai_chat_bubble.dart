@@ -85,15 +85,9 @@ class MemoryAiStreamingChatBubble extends HookWidget {
   @override
   Widget build(BuildContext context) {
     final content = useState(initialContent);
+    final pendingContent = useRef<String?>(null);
+    final flushTimer = useRef<Timer?>(null);
     final isThinking = useState(false);
-    final cursorVisible = useState(true);
-
-    useEffect(() {
-      final timer = Timer.periodic(const Duration(milliseconds: 520), (_) {
-        if (context.mounted) cursorVisible.value = !cursorVisible.value;
-      });
-      return timer.cancel;
-    }, const []);
 
     useEffect(() {
       final subscription = streamingContentStream.listen((data) {
@@ -101,11 +95,22 @@ class MemoryAiStreamingChatBubble extends HookWidget {
           return;
         }
 
-        if (data != content.value) {
-          content.value = data;
+        if (data == content.value) return;
+        pendingContent.value = data;
+        if (flushTimer.value == null) {
+          flushTimer.value = Timer(const Duration(milliseconds: 24), () {
+            flushTimer.value = null;
+            final next = pendingContent.value;
+            pendingContent.value = null;
+            if (next != null && context.mounted) content.value = next;
+          });
         }
       });
-      return subscription.cancel;
+      return () {
+        flushTimer.value?.cancel();
+        flushTimer.value = null;
+        unawaited(subscription.cancel());
+      };
     }, [streamingContentStream]);
 
     useEffect(() {
@@ -118,34 +123,17 @@ class MemoryAiStreamingChatBubble extends HookWidget {
       return subscription.cancel;
     }, [streamingThinkingStream]);
 
-    final cursor =
-        !isThinking.value && content.value.isNotEmpty && cursorVisible.value
-        ? '▍'
-        : '';
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 140),
-      curve: Curves.easeOutCubic,
-      alignment: Alignment.topLeft,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 120),
-        reverseDuration: const Duration(milliseconds: 80),
-        switchInCurve: Curves.easeOut,
-        switchOutCurve: Curves.easeIn,
-        transitionBuilder: (child, animation) =>
-            FadeTransition(opacity: animation, child: child),
-        child: MemoryAiChatBubble(
-          key: ValueKey(content.value),
-          content: '${content.value}$cursor',
-          role: role,
-          isError: isError,
-          isToolCalling: isToolCalling,
-          isToolResultBubble: isToolResultBubble,
-          retryLabel: retryLabel,
-          onRetry: onRetry,
-          packageName: packageName,
-          loadingHint: isThinking.value ? _memoryLoadingHint(context) : null,
-        ),
-      ),
+    return MemoryAiChatBubble(
+      key: const ValueKey('memory-streaming-bubble'),
+      content: content.value,
+      role: role,
+      isError: isError,
+      isToolCalling: isToolCalling,
+      isToolResultBubble: isToolResultBubble,
+      retryLabel: retryLabel,
+      onRetry: onRetry,
+      packageName: packageName,
+      loadingHint: isThinking.value ? _memoryLoadingHint(context) : null,
     );
   }
 }

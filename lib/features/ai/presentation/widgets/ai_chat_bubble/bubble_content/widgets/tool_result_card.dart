@@ -1,6 +1,7 @@
 ﻿import 'package:JsxposedX/core/extensions/context_extensions.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_compact_scope.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 
 class ToolResultCard extends HookWidget {
@@ -67,6 +68,18 @@ class ToolResultCard extends HookWidget {
                       color: color.withValues(alpha: 0.7),
                     ),
                   ],
+                  IconButton(
+                    onPressed: () => Clipboard.setData(
+                      ClipboardData(text: content),
+                    ),
+                    tooltip: context.isZh ? '复制结果' : 'Copy result',
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(
+                      Icons.copy_rounded,
+                      size: 16 * scale,
+                      color: color.withValues(alpha: 0.75),
+                    ),
+                  ),
                 ],
               ),
             ),

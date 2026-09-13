@@ -333,6 +333,7 @@ class _AiOverlayViewport extends HookConsumerWidget {
       return null;
     }, [chatState.visibleViewMessages.length]);
 
+    final followScheduled = useRef(false);
     useEffect(() {
       const followThreshold = 80.0;
       final subscription = chatNotifier.streamingContentStream.listen((
@@ -344,8 +345,12 @@ class _AiOverlayViewport extends HookConsumerWidget {
         if (scrollController.offset > followThreshold) {
           return;
         }
+        if (followScheduled.value) return;
+        followScheduled.value = true;
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          followScheduled.value = false;
           if (!scrollController.hasClients) {
             return;
           }
