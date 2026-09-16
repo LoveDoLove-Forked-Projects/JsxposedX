@@ -76,7 +76,7 @@ abstract class BaseBubbleToolbarPart {
               title: context.isZh ? '查看原始响应' : 'View raw response',
               onTap: () {
                 Navigator.of(context).pop();
-                showTextSelectionSheet(
+                showRawResponseSheet(
                   context,
                   title: context.isZh ? '原始响应' : 'Raw response',
                   text: rawDetails,
@@ -117,6 +117,44 @@ abstract class BaseBubbleToolbarPart {
             height: 1.5,
           ),
         ),
+      ),
+    );
+  }
+
+  Future<void> showRawResponseSheet(
+    BuildContext context, {
+    required String title,
+    required String text,
+  }) async {
+    final scale = AiChatCompactScope.scaleOf(context);
+    await AppBottomSheet.show<void>(
+      context: context,
+      title: title,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => handleCopyToClipboard(context, text),
+              icon: const Icon(Icons.copy_rounded),
+              label: Text(context.isZh ? '复制全部' : 'Copy all'),
+            ),
+          ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 420),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                text,
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12 * scale,
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

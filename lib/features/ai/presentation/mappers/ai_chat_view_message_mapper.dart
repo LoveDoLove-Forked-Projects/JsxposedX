@@ -84,6 +84,7 @@ class AiChatViewMessageMapper {
               ? content
               : _failureDetail(message.failure),
           isError: message.status == AiMessageStatus.failed,
+          rawDetails: _historyDetails(message),
         ),
       );
     }
@@ -119,6 +120,22 @@ class AiChatViewMessageMapper {
       if (call.argumentsJson.isNotEmpty) buffer.writeln('arguments: ${call.argumentsJson}');
     }
     if (snapshot.failure != null) buffer.writeln('failure: ${snapshot.failure}');
+    return buffer.toString().trim();
+  }
+
+  static String _historyDetails(AiMessage message) {
+    final buffer = StringBuffer()
+      ..writeln('message_id: ${message.id}')
+      ..writeln('conversation_id: ${message.conversationId}')
+      ..writeln('role: ${message.role.name}')
+      ..writeln('status: ${message.status.name}')
+      ..writeln('created_at: ${message.createdAt.toIso8601String()}');
+    if (message.completedAt != null) {
+      buffer.writeln('completed_at: ${message.completedAt!.toIso8601String()}');
+    }
+    if (message.usage != null) buffer.writeln('usage: ${message.usage}');
+    if (message.failure != null) buffer.writeln('failure: ${message.failure}');
+    buffer.writeln('transport: metadata unavailable for persisted message');
     return buffer.toString().trim();
   }
 
