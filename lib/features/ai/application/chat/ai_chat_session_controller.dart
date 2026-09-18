@@ -180,6 +180,13 @@ class AiChatSessionController {
     );
     if (index < 0) return;
     final target = _state.messages[index];
+    if (target.role == AiMessageRole.tool &&
+        target.parts.whereType<AiToolResultPart>().any(
+          (part) => !part.toolResult.success,
+        )) {
+      await _retryFailedToolResult(index);
+      return;
+    }
     if (target.role == AiMessageRole.user) {
       await _regenerateFrom(target);
       return;
@@ -314,25 +321,104 @@ class AiChatSessionController {
     List<AiMessage> history, {
     bool persistUserMessage = false,
   }) async {
-    final assistant = _state.assistant!;
-    final connection = _state.connection!;
-    final model = _state.model!;
     if (persistUserMessage) {
       await _conversationRepository.saveMessage(userMessage);
     }
 
-    var workingHistory = List<AiMessage>.from(history);
-    var parentId = userMessage.id;
+    await _runAssistantLoop(
+      initialHistory: history,
+      initialParentId: userMessage.id,
+    );
+  }
+
+  Future<void> _retryFailedToolResult(int resultIndex) async {
+    final resultMessage = _state.messages[resultIndex];
+    final failedResult = resultMessage.parts
+        .whereType<AiToolResultPart>()
+        .map((part) => part.toolResult)
+        .firstWhere(
+          (result) => !result.success,
+          orElse: () => throw StateError('Message has no failed tool result'),
+        );
+    final toolCall = _findToolCallBefore(resultIndex, failedResult.toolCallId);
+    if (toolCall == null) {
+      throw StateError('The failed tool result has no matching tool call');
+    }
+    if (environment?.toolExecutor == null) {
+      throw StateError('No tool executor is available for this conversation');
+    }
+
+    final discardedIds = _state.messages
+        .skip(resultIndex)
+        .map((message) => message.id);
+    await _conversationRepository.deleteMessagesById(
+      conversationId,
+      discardedIds,
+    );
+    final history = _state.messages.take(resultIndex).toList(growable: true);
+    _emit(
+      _state.copyWith(
+        messages: history,
+        phase: AiChatSessionPhase.requesting,
+        failure: null,
+      ),
+    );
+
+    final previous = history.lastOrNull;
+    final toolMessage = await _executeToolCall(
+      toolCall,
+      maxResultBytes: _state.assistant!.toolPolicy.maxResultBytes,
+      parentId: previous?.id,
+      previousTime: previous?.completedAt ?? previous?.createdAt ?? _now(),
+    );
+    await _runAssistantLoop(
+      initialHistory: [...history, toolMessage],
+      initialParentId: toolMessage.id,
+      startingToolRound: _toolRoundsIn(history),
+    );
+  }
+
+  AiToolCall? _findToolCallBefore(int index, String toolCallId) {
+    for (var candidate = index - 1; candidate >= 0; candidate--) {
+      final message = _state.messages[candidate];
+      if (message.role != AiMessageRole.assistant) continue;
+      for (final part in message.parts.whereType<AiToolCallPart>()) {
+        if (part.toolCall.id == toolCallId) return part.toolCall;
+      }
+    }
+    return null;
+  }
+
+  int _toolRoundsIn(List<AiMessage> messages) {
+    return messages
+        .where(
+          (message) =>
+              message.role == AiMessageRole.assistant &&
+              message.parts.whereType<AiToolCallPart>().isNotEmpty,
+        )
+        .length;
+  }
+
+  Future<void> _runAssistantLoop({
+    required List<AiMessage> initialHistory,
+    required String initialParentId,
+    int startingToolRound = 0,
+  }) async {
+    final assistant = _state.assistant!;
+    final connection = _state.connection!;
+    final model = _state.model!;
+    var workingHistory = List<AiMessage>.from(initialHistory);
+    var parentId = initialParentId;
     final tools = model.capabilities.toolCalling
         ? environment?.tools ?? const <AiToolSpec>[]
         : const <AiToolSpec>[];
     final maxToolRounds = assistant.toolPolicy.maxRounds.clamp(0, 32);
 
-    for (var toolRound = 0; ; toolRound++) {
+    for (var toolRound = startingToolRound; ; toolRound++) {
       final requestId = _idFactory();
       final assistantMessageId = _idFactory();
       final previousTime =
-          workingHistory.lastOrNull?.createdAt ?? userMessage.createdAt;
+          workingHistory.lastOrNull?.createdAt ?? _now().toUtc();
       final currentTime = _now().toUtc();
       final assistantCreatedAt = currentTime.isAfter(previousTime)
           ? currentTime
@@ -494,51 +580,68 @@ class AiChatSessionController {
     AiMessage assistantMessage,
     int maxResultBytes,
   ) async {
-    final executor = environment!.toolExecutor!;
     final results = <AiMessage>[];
     var previousTime =
         assistantMessage.completedAt ?? assistantMessage.createdAt;
+    String? parentId = assistantMessage.id;
     for (final part in assistantMessage.parts.whereType<AiToolCallPart>()) {
-      AiToolResult rawResult;
-      try {
-        rawResult = await executor.execute(part.toolCall);
-      } catch (error) {
-        rawResult = AiToolResult(
-          toolCallId: part.toolCall.id,
-          name: part.toolCall.name,
-          success: false,
-          content: 'Tool execution failed: $error',
-        );
-      }
-      final content = _truncateUtf8Like(rawResult.content, maxResultBytes);
-      final now = _now().toUtc();
-      final createdAt = now.isAfter(previousTime)
-          ? now
-          : previousTime.add(const Duration(microseconds: 1));
-      final message = AiMessage(
-        id: _idFactory(),
-        conversationId: conversationId,
-        role: AiMessageRole.tool,
-        parts: [
-          AiContentPart.toolResult(
-            toolResult: rawResult.copyWith(content: content),
-          ),
-        ],
-        parentId: results.lastOrNull?.id ?? assistantMessage.id,
-        createdAt: createdAt,
-        completedAt: createdAt,
+      final message = await _executeToolCall(
+        part.toolCall,
+        maxResultBytes: maxResultBytes,
+        parentId: parentId,
+        previousTime: previousTime,
       );
       results.add(message);
-      previousTime = createdAt;
-      await _conversationRepository.saveMessage(message);
-      _emit(
-        _state.copyWith(
-          messages: [..._state.messages, message],
-          phase: AiChatSessionPhase.requesting,
-        ),
-      );
+      parentId = message.id;
+      previousTime = message.completedAt ?? message.createdAt;
     }
     return results;
+  }
+
+  Future<AiMessage> _executeToolCall(
+    AiToolCall toolCall, {
+    required int maxResultBytes,
+    required String? parentId,
+    required DateTime previousTime,
+  }) async {
+    final executor = environment!.toolExecutor!;
+    AiToolResult rawResult;
+    try {
+      rawResult = await executor.execute(toolCall);
+    } catch (error) {
+      rawResult = AiToolResult(
+        toolCallId: toolCall.id,
+        name: toolCall.name,
+        success: false,
+        content: 'Tool execution failed: $error',
+      );
+    }
+    final content = _truncateUtf8Like(rawResult.content, maxResultBytes);
+    final now = _now().toUtc();
+    final createdAt = now.isAfter(previousTime)
+        ? now
+        : previousTime.add(const Duration(microseconds: 1));
+    final message = AiMessage(
+      id: _idFactory(),
+      conversationId: conversationId,
+      role: AiMessageRole.tool,
+      parts: [
+        AiContentPart.toolResult(
+          toolResult: rawResult.copyWith(content: content),
+        ),
+      ],
+      parentId: parentId,
+      createdAt: createdAt,
+      completedAt: createdAt,
+    );
+    await _conversationRepository.saveMessage(message);
+    _emit(
+      _state.copyWith(
+        messages: [..._state.messages, message],
+        phase: AiChatSessionPhase.requesting,
+      ),
+    );
+    return message;
   }
 
   static String _truncateUtf8Like(String content, int maxBytes) {

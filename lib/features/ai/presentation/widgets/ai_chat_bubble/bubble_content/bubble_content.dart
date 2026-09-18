@@ -12,6 +12,9 @@ import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble_content/widgets/dot_loading_indicator.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble_content/widgets/tool_calling_indicator.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble_content/widgets/tool_result_card.dart';
+import 'package:markdown/markdown.dart' as md;
+
+const String _streamingCursorMarker = '\uE000streaming_cursor\uE000';
 
 abstract class BaseBubbleContentPart {
   const BaseBubbleContentPart();
@@ -27,19 +30,16 @@ abstract class BaseBubbleContentPart {
     if (state.isLoading) {
       return buildLoading(context, state);
     }
+    if (state.toolInvocations.isNotEmpty) {
+      return buildToolInvocations(context, state);
+    }
     if (state.isToolResult) {
       return buildToolResult(context, state);
     }
     if (state.isToolCalling) {
       return buildToolCalling(context, state);
     }
-    final markdown = buildMarkdown(context, state, toolbarPart: toolbarPart);
-    if (!state.streaming) return markdown;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [markdown, const _StreamingCursor()],
-    );
+    return buildMarkdown(context, state, toolbarPart: toolbarPart);
   }
 
   @protected
@@ -50,6 +50,25 @@ abstract class BaseBubbleContentPart {
   @protected
   Widget buildToolResult(BuildContext context, BubbleState state) {
     return ToolResultCard(content: state.content);
+  }
+
+  @protected
+  Widget buildToolInvocations(BuildContext context, BubbleState state) {
+    final scale = AiChatCompactScope.scaleOf(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var index = 0; index < state.toolInvocations.length; index++) ...[
+          if (index > 0) SizedBox(height: 8 * scale),
+          ToolResultCard(
+            content: state.content,
+            invocation: state.toolInvocations[index],
+            onRetry: state.onRetry,
+          ),
+        ],
+      ],
+    );
   }
 
   @protected
@@ -80,6 +99,7 @@ abstract class BaseBubbleContentPart {
             toolbarPart: toolbarPart,
             markdown: parsed.text,
             actionTitle: context.l10n.aiBubbleUserTextTitle,
+            showStreamingCursor: false,
           ),
         for (final attachment in parsed.attachments) ...[
           if (parsed.hasText || attachment != parsed.attachments.first)
@@ -118,6 +138,7 @@ abstract class BaseBubbleContentPart {
       actionTitle: state.isUser
           ? context.l10n.aiBubbleUserTextTitle
           : context.l10n.aiBubbleAssistantTextTitle,
+      showStreamingCursor: state.streaming && !state.isUser,
     );
   }
 
@@ -175,7 +196,10 @@ abstract class BaseBubbleContentPart {
     required BaseBubbleToolbarPart toolbarPart,
     required String markdown,
     String? actionTitle,
+    bool showStreamingCursor = false,
   }) {
+    final theme = buildMarkdownTheme(context, state);
+    final cursorEnabled = showStreamingCursor && markdown.trim().isNotEmpty;
     return GestureDetector(
       onLongPress: () => toolbarPart.showTextActionsSheet(
         context,
@@ -188,10 +212,14 @@ abstract class BaseBubbleContentPart {
         rawDetails: state.rawDetails,
       ),
       child: MarkdownBody(
-        data: markdown,
-        styleSheet: buildMarkdownTheme(context, state),
+        data: cursorEnabled ? _withStreamingCursor(markdown) : markdown,
+        styleSheet: theme,
         selectable: false,
+        inlineSyntaxes: cursorEnabled
+            ? <md.InlineSyntax>[_StreamingCursorSyntax()]
+            : null,
         builders: {
+          if (cursorEnabled) 'streaming-cursor': _StreamingCursorBuilder(),
           'code': AiCodeElementBuilder(
             state: state,
             toolbarPart: toolbarPart,
@@ -209,31 +237,53 @@ class DefaultBubbleContentPart extends BaseBubbleContentPart {
   const DefaultBubbleContentPart();
 }
 
-class _StreamingCursor extends StatefulWidget {
-  const _StreamingCursor();
-
-  @override
-  State<_StreamingCursor> createState() => _StreamingCursorState();
+String _withStreamingCursor(String markdown) {
+  if (markdown.endsWith('\n')) {
+    return '$markdown$_streamingCursorMarker';
+  }
+  return '$markdown\u200A$_streamingCursorMarker';
 }
 
-class _StreamingCursorState extends State<_StreamingCursor>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 520),
-  )..repeat(reverse: true);
+class _StreamingCursorSyntax extends md.InlineSyntax {
+  _StreamingCursorSyntax() : super(_streamingCursorMarker);
 
   @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+  bool onMatch(md.InlineParser parser, Match match) {
+    parser.addNode(md.Element.empty('streaming-cursor'));
+    return true;
   }
+}
+
+class _StreamingCursorBuilder extends MarkdownElementBuilder {
+  @override
+  Widget visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    final style =
+        preferredStyle ?? parentStyle ?? DefaultTextStyle.of(context).style;
+    return _MarkdownStreamingCursor(style: style);
+  }
+}
+
+class _MarkdownStreamingCursor extends StatelessWidget {
+  const _MarkdownStreamingCursor({required this.style});
+
+  final TextStyle style;
 
   @override
-  Widget build(BuildContext context) => FadeTransition(
-    opacity: Tween<double>(begin: 0.25, end: 1).animate(_controller),
-    child: const Text('▍'),
-  );
+  Widget build(BuildContext context) {
+    return Text(
+      '▌',
+      style: style.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+        fontSize: (style.fontSize ?? 15) * 1.08,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
 }
 
 class _ThinkingMarkdownContent extends HookWidget {
@@ -263,6 +313,7 @@ class _ThinkingMarkdownContent extends HookWidget {
     final title = state.streaming
         ? (context.isZh ? '正在思考…' : 'Thinking…')
         : (context.isZh ? '思考完成' : 'Thinking complete');
+    final showAnswerCursor = state.streaming && answerContent.trim().isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -361,10 +412,17 @@ class _ThinkingMarkdownContent extends HookWidget {
               rawDetails: state.rawDetails,
             ),
             child: MarkdownBody(
-              data: answerContent,
+              data: showAnswerCursor
+                  ? _withStreamingCursor(answerContent)
+                  : answerContent,
               styleSheet: theme,
               selectable: false,
+              inlineSyntaxes: showAnswerCursor
+                  ? <md.InlineSyntax>[_StreamingCursorSyntax()]
+                  : null,
               builders: {
+                if (showAnswerCursor)
+                  'streaming-cursor': _StreamingCursorBuilder(),
                 'code': AiCodeElementBuilder(
                   state: state,
                   toolbarPart: toolbarPart,

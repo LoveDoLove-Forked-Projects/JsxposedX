@@ -86,6 +86,14 @@ void main() {
     expect(result.single.isToolResultBubble, isTrue);
     expect(result.single.content, contains('inspect_apk'));
     expect(result.single.content, contains('done'));
+    expect(result.single.toolInvocations, hasLength(1));
+    expect(result.single.toolInvocations.single.callId, 'call-1');
+    expect(result.single.toolInvocations.single.name, 'inspect_apk');
+    expect(result.single.toolInvocations.single.resultContent, 'done');
+    expect(
+      result.single.toolInvocations.single.duration,
+      const Duration(seconds: 1),
+    );
   });
 
   test('keeps tool call and result paired when multiple calls are present', () {
@@ -144,6 +152,8 @@ void main() {
     expect(result[1].content, contains('first_tool'));
     expect(result[1].content, contains('first done'));
     expect(result.every((message) => message.isToolResultBubble), isTrue);
+    expect(result[0].toolInvocations.single.callId, 'call-b');
+    expect(result[1].toolInvocations.single.callId, 'call-a');
   });
 
   test('renders failed tool results as error view messages', () {
@@ -184,6 +194,7 @@ void main() {
     expect(result, hasLength(1));
     expect(result.single.isError, isTrue);
     expect(result.single.content, contains('permission denied'));
+    expect(result.single.toolInvocations.single.success, isFalse);
   });
 
   test('keeps an unmatched tool call visible as a pending tool bubble', () {
@@ -208,6 +219,8 @@ void main() {
     expect(result, hasLength(1));
     expect(result.single.isToolResultBubble, isTrue);
     expect(result.single.content, contains('long_running_tool'));
+    expect(result.single.toolInvocations.single.callId, 'call-pending');
+    expect(result.single.toolInvocations.single.argumentsJson, '{}');
   });
 
   test('maps the active stream snapshot to the current assistant item', () {
@@ -259,6 +272,30 @@ void main() {
     );
     expect(result.rawDetails, contains('raw_sse:'));
     expect(result.rawDetails, contains('data: {"delta":"partial"}'));
+  });
+
+  test('maps streaming tool call snapshots to structured invocations', () {
+    final result = mapper.mapStreaming(
+      messageId: 'streaming-tool',
+      snapshot: const AiStreamSnapshot(
+        requestId: 'request',
+        status: AiStreamStatus.streaming,
+        toolCalls: [
+          AiToolCallSnapshot(
+            index: 0,
+            id: 'call-live',
+            name: 'search_classes',
+            argumentsJson: '{"keyword":"Root"}',
+          ),
+        ],
+      ),
+    );
+
+    expect(result.toolInvocations, hasLength(1));
+    expect(result.toolInvocations.single.callId, 'call-live');
+    expect(result.toolInvocations.single.name, 'search_classes');
+    expect(result.toolInvocations.single.argumentsJson, '{"keyword":"Root"}');
+    expect(result.toolInvocations.single.isRunning, isTrue);
   });
 }
 

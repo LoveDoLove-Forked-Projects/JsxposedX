@@ -9,6 +9,7 @@ import 'package:JsxposedX/features/ai/presentation/providers/runtime/ai_chat_run
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/ai_chat_bubble.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_compact_scope.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_view_message.dart';
+import 'package:JsxposedX/features/ai/presentation/states/ai_tool_invocation_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -210,6 +211,7 @@ class AiChatList extends HookConsumerWidget {
                           chatNotifier.streamingContentStream,
                       streamingThinkingStream:
                           chatNotifier.streamingThinkingStream,
+                      toolInvocations: message.toolInvocations,
                       onRetry: () => chatNotifier.retryByMessageId(message.id),
                       packageName: packageName,
                     );
@@ -220,8 +222,9 @@ class AiChatList extends HookConsumerWidget {
                         ? bubbleBuilder!(
                             message: message,
                             retryLabel: retryLabel,
-                            onRetry: () =>
-                                chatNotifier.retryByMessageId(message.id),
+                            onRetry: () => chatNotifier.retryByMessageId(
+                              message.sourceMessageId ?? message.id,
+                            ),
                             packageName: packageName,
                           )
                         : AiChatBubble(
@@ -234,8 +237,9 @@ class AiChatList extends HookConsumerWidget {
                                 !message.content.startsWith('✅') &&
                                 !message.content.startsWith('❌'),
                             retryLabel: retryLabel,
-                            onRetry: () =>
-                                chatNotifier.retryByMessageId(message.id),
+                            onRetry: () => chatNotifier.retryByMessageId(
+                              message.sourceMessageId ?? message.id,
+                            ),
                             packageName: packageName,
                             onEdit: message.role == 'user'
                                 ? () => _editAndResendMessage(
@@ -281,6 +285,7 @@ class AiChatList extends HookConsumerWidget {
                                   )
                                 : null,
                             rawDetails: message.rawDetails,
+                            toolInvocations: message.toolInvocations,
                           ),
                   );
                 },
@@ -386,8 +391,9 @@ Future<void> _editAndResendMessage(
     ),
   );
   controller.dispose();
-  if (updated == null || updated.trim().isEmpty || updated == message.content)
+  if (updated == null || updated.trim().isEmpty || updated == message.content) {
     return;
+  }
   await onSubmit(messageId: message.id, updatedText: updated.trim());
 }
 
@@ -616,6 +622,7 @@ class _StreamingAiChatBubble extends HookWidget {
     required this.retryLabel,
     required this.streamingContentStream,
     required this.streamingThinkingStream,
+    this.toolInvocations = const <AiToolInvocationView>[],
     this.onRetry,
     this.packageName,
   });
@@ -627,6 +634,7 @@ class _StreamingAiChatBubble extends HookWidget {
   final String retryLabel;
   final Stream<String> streamingContentStream;
   final Stream<bool> streamingThinkingStream;
+  final List<AiToolInvocationView> toolInvocations;
   final VoidCallback? onRetry;
   final String? packageName;
 
@@ -700,6 +708,7 @@ class _StreamingAiChatBubble extends HookWidget {
             ? (context.isZh ? 'AI 正在深度思考...' : 'AI is thinking deeply...')
             : null,
         rawDetails: null,
+        toolInvocations: toolInvocations,
       ),
     );
   }

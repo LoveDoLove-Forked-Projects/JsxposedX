@@ -276,6 +276,63 @@ void main() {
     expect(controller.state.phase, AiChatSessionPhase.ready);
     await controller.close();
   });
+
+  test(
+    'retries a failed tool result and continues the assistant turn',
+    () async {
+      final transport = _ScriptedToolTransport();
+      final executor = _FlakyToolExecutor();
+      final controller = _controller(
+        catalog,
+        conversations,
+        transport,
+        environment: AiChatSessionEnvironment(
+          id: 'apk_reverse',
+          scopeId: 'com.example.app',
+          version: 'v2',
+          systemPrompt: '',
+          tools: const [
+            AiToolSpec(
+              name: 'get_manifest',
+              description: 'Read manifest',
+              inputSchema: {'type': 'object'},
+            ),
+          ],
+          toolExecutor: executor,
+        ),
+      );
+
+      await controller.initialize();
+      await controller.sendText('analyze');
+
+      final failedToolMessage = controller.state.messages.singleWhere(
+        (message) =>
+            message.role == AiMessageRole.tool &&
+            message.parts.whereType<AiToolResultPart>().any(
+              (part) => !part.toolResult.success,
+            ),
+      );
+
+      await controller.retryByMessageId(failedToolMessage.id);
+
+      expect(executor.calls, 2);
+      expect(transport.requests, hasLength(3));
+      final stored = await conversations.getMessages('conversation');
+      expect(stored, hasLength(4));
+      final retriedResult = stored
+          .expand((message) => message.parts)
+          .whereType<AiToolResultPart>()
+          .single
+          .toolResult;
+      expect(retriedResult.success, isTrue);
+      expect(retriedResult.content, 'manifest-data-after-retry');
+      expect(
+        stored.last.parts.whereType<AiTextPart>().single.text,
+        'analysis complete',
+      );
+      await controller.close();
+    },
+  );
 }
 
 AiChatSessionController _controller(
@@ -515,6 +572,27 @@ class _ThrowingToolExecutor implements AiToolExecutor {
     AiToolProgress? onProgress,
   }) async {
     throw StateError('boom');
+  }
+}
+
+class _FlakyToolExecutor implements AiToolExecutor {
+  var calls = 0;
+
+  @override
+  Future<AiToolResult> execute(
+    AiToolCall call, {
+    AiToolProgress? onProgress,
+  }) async {
+    calls++;
+    if (calls == 1) {
+      throw StateError('temporary boom');
+    }
+    return AiToolResult(
+      toolCallId: call.id,
+      name: call.name,
+      success: true,
+      content: 'manifest-data-after-retry',
+    );
   }
 }
 

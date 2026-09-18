@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:JsxposedX/features/ai/presentation/states/ai_tool_invocation_view.dart';
+
 @immutable
 class BubbleState {
   final String content;
@@ -15,6 +17,7 @@ class BubbleState {
   final VoidCallback? onDelete;
   final VoidCallback? onRegenerate;
   final String? rawDetails;
+  final List<AiToolInvocationView> toolInvocations;
 
   const BubbleState({
     required this.content,
@@ -30,14 +33,22 @@ class BubbleState {
     this.onDelete,
     this.onRegenerate,
     this.rawDetails,
+    this.toolInvocations = const <AiToolInvocationView>[],
   });
 
   bool get isUser => role == 'user';
 
   bool get isLoading =>
-      !isUser && content.isEmpty && !isError && !isToolCalling;
+      !isUser &&
+      content.isEmpty &&
+      !isError &&
+      !isToolCalling &&
+      toolInvocations.isEmpty;
 
   bool get isToolResult {
-    return !isUser && (content.startsWith('✅') || content.startsWith('❌'));
+    return !isUser &&
+        (toolInvocations.isNotEmpty ||
+            content.startsWith('✅') ||
+            content.startsWith('❌'));
   }
 }

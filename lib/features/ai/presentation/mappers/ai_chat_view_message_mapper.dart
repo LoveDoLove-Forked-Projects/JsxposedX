@@ -1,27 +1,38 @@
+import 'dart:convert';
+
 import 'package:JsxposedX/features/ai/application/chat/ai_stream_snapshot.dart';
 import 'package:JsxposedX/features/ai/application/chat/ai_transport_trace.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_thinking_markup.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_view_message.dart';
+import 'package:JsxposedX/features/ai/presentation/states/ai_tool_invocation_view.dart';
 
 class AiChatViewMessageMapper {
   const AiChatViewMessageMapper();
 
   List<AiChatViewMessage> mapHistory(List<AiMessage> messages) {
     final display = <AiChatViewMessage>[];
-    final pendingCalls = <String, AiToolCall>{};
+    final pendingCalls = <String, _PendingToolCall>{};
     final pendingOrder = <String>[];
 
     void flushPending() {
       for (final id in pendingOrder) {
-        final call = pendingCalls[id];
-        if (call == null) continue;
+        final pending = pendingCalls[id];
+        if (pending == null) continue;
+        final invocation = AiToolInvocationView(
+          callId: id,
+          name: pending.call.name,
+          argumentsJson: _encodeToolArguments(pending.call.arguments),
+          status: AiToolInvocationViewStatus.running,
+          requestedAt: pending.requestedAt,
+        );
         display.add(
           AiChatViewMessage(
             id: 'tool-pending-$id',
             role: AiMessageRole.assistant.name,
-            content: '`${call.name}`',
+            content: '`${pending.call.name}`',
             isToolResultBubble: true,
+            toolInvocations: [invocation],
           ),
         );
       }
@@ -37,7 +48,10 @@ class AiChatViewMessageMapper {
         for (final part in calls) {
           final id = part.toolCall.id;
           if (id.isEmpty) continue;
-          pendingCalls[id] = part.toolCall;
+          pendingCalls[id] = _PendingToolCall(
+            call: part.toolCall,
+            requestedAt: message.completedAt ?? message.createdAt,
+          );
           pendingOrder.add(id);
         }
         continue;
@@ -47,9 +61,24 @@ class AiChatViewMessageMapper {
       if (message.role == AiMessageRole.tool && results.isNotEmpty) {
         for (final part in results) {
           final result = part.toolResult;
-          final call = pendingCalls.remove(result.toolCallId);
+          final pending = pendingCalls.remove(result.toolCallId);
           pendingOrder.remove(result.toolCallId);
-          final name = call?.name.isNotEmpty == true ? call!.name : result.name;
+          final name = pending?.call.name.isNotEmpty == true
+              ? pending!.call.name
+              : result.name;
+          final invocation = AiToolInvocationView(
+            callId: result.toolCallId,
+            name: name,
+            argumentsJson: pending == null
+                ? ''
+                : _encodeToolArguments(pending.call.arguments),
+            status: result.success
+                ? AiToolInvocationViewStatus.succeeded
+                : AiToolInvocationViewStatus.failed,
+            resultContent: result.content,
+            requestedAt: pending?.requestedAt,
+            completedAt: message.completedAt ?? message.createdAt,
+          );
           display.add(
             AiChatViewMessage(
               id: 'tool-result-${message.id}-${result.toolCallId}',
@@ -59,6 +88,7 @@ class AiChatViewMessageMapper {
                   '${result.success ? '✅' : '❌'} `$name`:\n\n${result.content}',
               isError: !result.success,
               isToolResultBubble: true,
+              toolInvocations: [invocation],
             ),
           );
         }
@@ -109,6 +139,18 @@ class AiChatViewMessageMapper {
       ),
       isError: snapshot.status == AiStreamStatus.failed,
       rawDetails: _snapshotDetails(snapshot),
+      toolInvocations: snapshot.toolCalls
+          .map(
+            (call) => AiToolInvocationView(
+              callId: call.id ?? 'pending-${call.index}',
+              name: call.name.isEmpty ? 'tool #${call.index + 1}' : call.name,
+              argumentsJson: call.argumentsJson,
+              status: call.argumentsJson.trim().isEmpty
+                  ? AiToolInvocationViewStatus.preparing
+                  : AiToolInvocationViewStatus.running,
+            ),
+          )
+          .toList(growable: false),
     );
   }
 
@@ -207,4 +249,15 @@ class AiChatViewMessageMapper {
         ? failure.code.name
         : failure.messageKey;
   }
+
+  static String _encodeToolArguments(Map<String, Object?> arguments) {
+    return const JsonEncoder.withIndent('  ').convert(arguments);
+  }
+}
+
+class _PendingToolCall {
+  const _PendingToolCall({required this.call, required this.requestedAt});
+
+  final AiToolCall call;
+  final DateTime? requestedAt;
 }

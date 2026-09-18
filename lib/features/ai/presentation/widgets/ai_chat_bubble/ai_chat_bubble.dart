@@ -4,6 +4,7 @@ import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble_content/bubble_content.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble_states/bubble_state.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble_toolbar/bubble_toolbar.dart';
+import 'package:JsxposedX/features/ai/presentation/states/ai_tool_invocation_view.dart';
 
 abstract class BaseAiChatBubble extends StatelessWidget {
   final String content;
@@ -19,6 +20,7 @@ abstract class BaseAiChatBubble extends StatelessWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onRegenerate;
   final String? rawDetails;
+  final List<AiToolInvocationView> toolInvocations;
 
   const BaseAiChatBubble({
     super.key,
@@ -35,6 +37,7 @@ abstract class BaseAiChatBubble extends StatelessWidget {
     this.onDelete,
     this.onRegenerate,
     this.rawDetails,
+    this.toolInvocations = const <AiToolInvocationView>[],
   });
 
   @protected
@@ -53,6 +56,7 @@ abstract class BaseAiChatBubble extends StatelessWidget {
       onDelete: onDelete,
       onRegenerate: onRegenerate,
       rawDetails: rawDetails,
+      toolInvocations: toolInvocations,
     );
   }
 
@@ -102,5 +106,6 @@ class AiChatBubble extends BaseAiChatBubble {
     super.onDelete,
     super.onRegenerate,
     super.rawDetails,
+    super.toolInvocations,
   });
 }
