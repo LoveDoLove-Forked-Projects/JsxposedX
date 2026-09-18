@@ -54,28 +54,6 @@ class AiReversePage extends HookConsumerWidget {
       SmartDialog.dismiss();
     }
 
-    final lastMessageId = useRef<String?>(null);
-    useEffect(() {
-      final visibleMessages = chatState.visibleViewMessages;
-      if (visibleMessages.isNotEmpty) {
-        final currentLastId = visibleMessages.last.id;
-        final isNewMessage = lastMessageId.value != currentLastId;
-        lastMessageId.value = currentLastId;
-        if (scrollController.hasClients && isNewMessage) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (scrollController.hasClients) {
-              scrollController.animateTo(
-                0.0,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOut,
-              );
-            }
-          });
-        }
-      }
-      return null;
-    }, [chatState.visibleViewMessages.length]);
-
     final followScheduled = useRef(false);
     useEffect(() {
       const followThreshold = 80.0;

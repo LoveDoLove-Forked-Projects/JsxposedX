@@ -105,7 +105,11 @@ class AiChatViewMessageMapper {
           .map((part) => part.text)
           .join();
       final content = message.role == AiMessageRole.assistant
-          ? AiThinkingMarkup.compose(thinking: reasoning, answer: text)
+          ? AiThinkingMarkup.compose(
+              thinking: reasoning,
+              answer: text,
+              duration: null, // Note: persisted messages don't yet store duration directly
+            )
           : text;
       if (content.isEmpty && message.status != AiMessageStatus.failed) continue;
       display.add(
@@ -118,6 +122,7 @@ class AiChatViewMessageMapper {
               : _failureDetail(message.failure),
           isError: message.status == AiMessageStatus.failed,
           rawDetails: _historyDetails(message),
+          transportTrace: message.transportTrace,
         ),
       );
     }
@@ -136,9 +141,11 @@ class AiChatViewMessageMapper {
       content: AiThinkingMarkup.compose(
         thinking: snapshot.reasoning,
         answer: snapshot.text,
+        duration: snapshot.reasoningDuration,
       ),
       isError: snapshot.status == AiStreamStatus.failed,
       rawDetails: _snapshotDetails(snapshot),
+      transportTrace: snapshot.transportTrace,
       toolInvocations: snapshot.toolCalls
           .map(
             (call) => AiToolInvocationView(
@@ -245,9 +252,14 @@ class AiChatViewMessageMapper {
 
   static String _failureDetail(AiFailure? failure) {
     if (failure == null) return '';
-    return failure.messageKey.startsWith('ai.error.')
-        ? failure.code.name
+    final codeName = failure.code.name;
+    final prefix = failure.messageKey.startsWith('ai.error.')
+        ? codeName
         : failure.messageKey;
+    if (failure.detail != null && failure.detail!.isNotEmpty) {
+      return '$prefix\n\n${failure.detail}';
+    }
+    return prefix;
   }
 
   static String _encodeToolArguments(Map<String, Object?> arguments) {

@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'package:JsxposedX/features/ai/application/chat/ai_transport_trace.dart';
+
 part 'ai_system_models.freezed.dart';
 
 enum AiMessageRole { system, user, assistant, tool }
@@ -101,9 +103,10 @@ abstract class AiMessage with _$AiMessage {
     required AiMessageRole role,
     required List<AiContentPart> parts,
     @Default(AiMessageStatus.completed) AiMessageStatus status,
-    String? parentId,
     AiUsage? usage,
     AiFailure? failure,
+    AiTransportTrace? transportTrace,
+    String? parentId,
     required DateTime createdAt,
     DateTime? completedAt,
   }) = _AiMessage;
@@ -266,5 +269,6 @@ abstract class AiFailure with _$AiFailure {
     @Default(false) bool retryable,
     int? httpStatus,
     String? providerRequestId,
+    String? detail,
   }) = _AiFailure;
 }

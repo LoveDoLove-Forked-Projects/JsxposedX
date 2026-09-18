@@ -827,17 +827,6 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                           role: message.role,
                                                           isError:
                                                               message.isError,
-                                                          isToolCalling:
-                                                              message
-                                                                  .isToolResultBubble &&
-                                                              !message.content
-                                                                  .startsWith(
-                                                                    '✅',
-                                                                  ) &&
-                                                              !message.content
-                                                                  .startsWith(
-                                                                    '❌',
-                                                                  ),
                                                           isToolResultBubble:
                                                               message
                                                                   .isToolResultBubble,
@@ -864,8 +853,6 @@ class _AiOverlayViewport extends HookConsumerWidget {
                                                           role: message.role,
                                                           isError:
                                                               message.isError,
-                                                          isToolCalling: message
-                                                              .isToolResultBubble,
                                                           isToolResultBubble:
                                                               message
                                                                   .isToolResultBubble,

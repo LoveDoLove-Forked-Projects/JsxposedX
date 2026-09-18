@@ -19,6 +19,9 @@ class AiStreamAccumulator {
   final StringBuffer _text = StringBuffer();
   final StringBuffer _reasoning = StringBuffer();
   final Map<int, _MutableToolCall> _toolCalls = {};
+  
+  DateTime? _reasoningStartTime;
+  Duration? _reasoningDuration;
 
   late AiStreamSnapshot _snapshot;
   Timer? _publishTimer;
@@ -64,12 +67,16 @@ class AiStreamAccumulator {
         _status = AiStreamStatus.streaming;
         _markDirty(immediate: true);
       case AiTextDelta(:final delta):
+        if (_reasoningStartTime != null && _reasoningDuration == null) {
+          _reasoningDuration = DateTime.now().difference(_reasoningStartTime!);
+        }
         _text.write(delta);
         // Publish text immediately. A provider may deliver many SSE events in
         // one HTTP chunk; timer-only coalescing would make the UI appear to
         // render the entire answer at once.
         _markDirty(immediate: true);
       case AiReasoningDelta(:final delta):
+        _reasoningStartTime ??= DateTime.now();
         _reasoning.write(delta);
         _markDirty(immediate: true);
       case AiToolCallDelta(
@@ -96,10 +103,16 @@ class AiStreamAccumulator {
         _usage = value;
         _markDirty();
       case AiResponseCompleted(:final reason):
+        if (_reasoningStartTime != null && _reasoningDuration == null) {
+          _reasoningDuration = DateTime.now().difference(_reasoningStartTime!);
+        }
         _status = AiStreamStatus.completed;
         _finishReason = reason;
         _markDirty(immediate: true);
       case AiResponseFailed(:final failure):
+        if (_reasoningStartTime != null && _reasoningDuration == null) {
+          _reasoningDuration = DateTime.now().difference(_reasoningStartTime!);
+        }
         _status = AiStreamStatus.failed;
         _failure = failure;
         _markDirty(immediate: true);
@@ -122,6 +135,7 @@ class AiStreamAccumulator {
       status: _status,
       text: _text.toString(),
       reasoning: _reasoning.toString(),
+      reasoningDuration: _reasoningDuration,
       toolCalls: _toolCalls.values
           .map((call) => call.toSnapshot())
           .toList(growable: false),

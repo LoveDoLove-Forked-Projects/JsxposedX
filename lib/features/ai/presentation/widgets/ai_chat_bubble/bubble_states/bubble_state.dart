@@ -8,7 +8,6 @@ class BubbleState {
   final String role;
   final bool isError;
   final VoidCallback? onRetry;
-  final bool isToolCalling;
   final String? packageName;
   final String? retryLabel;
   final String? loadingHint;
@@ -24,7 +23,6 @@ class BubbleState {
     required this.role,
     required this.isError,
     required this.onRetry,
-    required this.isToolCalling,
     required this.packageName,
     this.retryLabel,
     this.loadingHint,
@@ -42,7 +40,6 @@ class BubbleState {
       !isUser &&
       content.isEmpty &&
       !isError &&
-      !isToolCalling &&
       toolInvocations.isEmpty;
 
   bool get isToolResult {

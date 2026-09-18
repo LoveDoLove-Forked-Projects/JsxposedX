@@ -25,6 +25,7 @@ abstract class AiStreamSnapshot with _$AiStreamSnapshot {
     @Default(AiStreamStatus.idle) AiStreamStatus status,
     @Default('') String text,
     @Default('') String reasoning,
+    Duration? reasoningDuration,
     @Default(<AiToolCallSnapshot>[]) List<AiToolCallSnapshot> toolCalls,
     AiUsage? usage,
     AiFinishReason? finishReason,

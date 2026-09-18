@@ -58,9 +58,8 @@ class AiChatOrchestrator {
         final errorBody = await _readAtMost(response.body, 64 * 1024);
         final rawError = _rawBodyText(errorBody);
         final completedTrace = await response.completedTrace;
-        run._accumulator.updateTransportTrace(
-          completedTrace.copyWith(rawErrorJson: rawError),
-        );
+        final finalTrace = completedTrace.copyWith(rawErrorJson: rawError);
+        run._accumulator.updateTransportTrace(finalTrace);
         run._accumulator.add(
           AiStreamEvent.failed(
             requestId: request.requestId,
@@ -84,17 +83,22 @@ class AiChatOrchestrator {
       await for (final event in events) {
         run._accumulator.add(event);
       }
-      run._accumulator.updateTransportTrace(await response.completedTrace);
+      final completedTrace = await response.completedTrace;
+      run._accumulator.updateTransportTrace(completedTrace);
     } on AiTransportException catch (error) {
       _addFailure(run, error.failure);
     } on StateError {
       _fail(run, AiFailureCode.invalidConfiguration);
     } on UnsupportedError {
       _fail(run, AiFailureCode.invalidConfiguration);
-    } catch (_) {
-      _fail(
+    } catch (e) {
+      _addFailure(
         run,
-        run.isCancelled ? AiFailureCode.cancelled : AiFailureCode.unknown,
+        AiFailure(
+          code: run.isCancelled ? AiFailureCode.cancelled : AiFailureCode.unknown,
+          messageKey: 'ai.error.${run.isCancelled ? 'cancelled' : 'unknown'}',
+          detail: e.toString(),
+        ),
       );
     } finally {
       await run._finish();

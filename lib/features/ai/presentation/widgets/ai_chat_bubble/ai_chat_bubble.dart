@@ -11,7 +11,6 @@ abstract class BaseAiChatBubble extends StatelessWidget {
   final String role;
   final bool isError;
   final VoidCallback? onRetry;
-  final bool isToolCalling;
   final String? packageName;
   final String? retryLabel;
   final String? loadingHint;
@@ -28,7 +27,6 @@ abstract class BaseAiChatBubble extends StatelessWidget {
     required this.role,
     this.isError = false,
     this.onRetry,
-    this.isToolCalling = false,
     this.packageName,
     this.retryLabel,
     this.loadingHint,
@@ -47,7 +45,6 @@ abstract class BaseAiChatBubble extends StatelessWidget {
       role: role,
       isError: isError,
       onRetry: onRetry,
-      isToolCalling: isToolCalling,
       packageName: packageName,
       retryLabel: retryLabel,
       loadingHint: loadingHint,
@@ -97,7 +94,6 @@ class AiChatBubble extends BaseAiChatBubble {
     required super.role,
     super.isError,
     super.onRetry,
-    super.isToolCalling,
     super.packageName,
     super.retryLabel,
     super.loadingHint,

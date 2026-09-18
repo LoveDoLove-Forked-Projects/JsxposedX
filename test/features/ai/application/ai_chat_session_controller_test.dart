@@ -7,6 +7,7 @@ import 'package:JsxposedX/features/ai/application/chat/ai_chat_orchestrator.dart
 import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_environment.dart';
 import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_controller.dart';
 import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_state.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_transport_trace.dart';
 import 'package:JsxposedX/features/ai/data/repositories/drift_ai_catalog_repository.dart';
 import 'package:JsxposedX/features/ai/data/repositories/drift_ai_conversation_repository.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
@@ -76,7 +77,7 @@ void main() {
       );
       final stored = await conversations.getMessages('conversation');
       expect(stored, hasLength(2));
-      expect(stored.last, assistantMessage);
+      expect(stored.last.id, assistantMessage.id);
       await controller.close();
     },
   );

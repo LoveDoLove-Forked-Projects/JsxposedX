@@ -6,7 +6,6 @@ class MemoryAiBubbleState extends BubbleState {
     required super.role,
     required super.isError,
     required super.onRetry,
-    required super.isToolCalling,
     required super.packageName,
     required this.isToolResultBubble,
     super.retryLabel,

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:JsxposedX/features/ai/application/chat/ai_transport_trace.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_tool_invocation_view.dart';
 
 /// Presentation-only message model. The chat widgets do not depend on the
@@ -13,6 +14,7 @@ class AiChatViewMessage {
     this.isError = false,
     this.isToolResultBubble = false,
     this.rawDetails,
+    this.transportTrace,
     this.sourceMessageId,
     this.toolInvocations = const <AiToolInvocationView>[],
   });
@@ -23,6 +25,7 @@ class AiChatViewMessage {
   final bool isError;
   final bool isToolResultBubble;
   final String? rawDetails;
+  final AiTransportTrace? transportTrace;
   final String? sourceMessageId;
   final List<AiToolInvocationView> toolInvocations;
 }

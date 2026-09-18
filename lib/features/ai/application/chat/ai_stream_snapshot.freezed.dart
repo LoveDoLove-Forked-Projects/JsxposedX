@@ -280,7 +280,7 @@ as String,
 /// @nodoc
 mixin _$AiStreamSnapshot {
 
- String get requestId; int get sequence; AiStreamStatus get status; String get text; String get reasoning; List<AiToolCallSnapshot> get toolCalls; AiUsage? get usage; AiFinishReason? get finishReason; AiFailure? get failure; AiTransportTrace? get transportTrace;
+ String get requestId; int get sequence; AiStreamStatus get status; String get text; String get reasoning; Duration? get reasoningDuration; List<AiToolCallSnapshot> get toolCalls; AiUsage? get usage; AiFinishReason? get finishReason; AiFailure? get failure; AiTransportTrace? get transportTrace;
 /// Create a copy of AiStreamSnapshot
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -291,16 +291,16 @@ $AiStreamSnapshotCopyWith<AiStreamSnapshot> get copyWith => _$AiStreamSnapshotCo
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is AiStreamSnapshot&&(identical(other.requestId, requestId) || other.requestId == requestId)&&(identical(other.sequence, sequence) || other.sequence == sequence)&&(identical(other.status, status) || other.status == status)&&(identical(other.text, text) || other.text == text)&&(identical(other.reasoning, reasoning) || other.reasoning == reasoning)&&const DeepCollectionEquality().equals(other.toolCalls, toolCalls)&&(identical(other.usage, usage) || other.usage == usage)&&(identical(other.finishReason, finishReason) || other.finishReason == finishReason)&&(identical(other.failure, failure) || other.failure == failure)&&(identical(other.transportTrace, transportTrace) || other.transportTrace == transportTrace));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AiStreamSnapshot&&(identical(other.requestId, requestId) || other.requestId == requestId)&&(identical(other.sequence, sequence) || other.sequence == sequence)&&(identical(other.status, status) || other.status == status)&&(identical(other.text, text) || other.text == text)&&(identical(other.reasoning, reasoning) || other.reasoning == reasoning)&&(identical(other.reasoningDuration, reasoningDuration) || other.reasoningDuration == reasoningDuration)&&const DeepCollectionEquality().equals(other.toolCalls, toolCalls)&&(identical(other.usage, usage) || other.usage == usage)&&(identical(other.finishReason, finishReason) || other.finishReason == finishReason)&&(identical(other.failure, failure) || other.failure == failure)&&(identical(other.transportTrace, transportTrace) || other.transportTrace == transportTrace));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,requestId,sequence,status,text,reasoning,const DeepCollectionEquality().hash(toolCalls),usage,finishReason,failure,transportTrace);
+int get hashCode => Object.hash(runtimeType,requestId,sequence,status,text,reasoning,reasoningDuration,const DeepCollectionEquality().hash(toolCalls),usage,finishReason,failure,transportTrace);
 
 @override
 String toString() {
-  return 'AiStreamSnapshot(requestId: $requestId, sequence: $sequence, status: $status, text: $text, reasoning: $reasoning, toolCalls: $toolCalls, usage: $usage, finishReason: $finishReason, failure: $failure, transportTrace: $transportTrace)';
+  return 'AiStreamSnapshot(requestId: $requestId, sequence: $sequence, status: $status, text: $text, reasoning: $reasoning, reasoningDuration: $reasoningDuration, toolCalls: $toolCalls, usage: $usage, finishReason: $finishReason, failure: $failure, transportTrace: $transportTrace)';
 }
 
 
@@ -311,7 +311,7 @@ abstract mixin class $AiStreamSnapshotCopyWith<$Res>  {
   factory $AiStreamSnapshotCopyWith(AiStreamSnapshot value, $Res Function(AiStreamSnapshot) _then) = _$AiStreamSnapshotCopyWithImpl;
 @useResult
 $Res call({
- String requestId, int sequence, AiStreamStatus status, String text, String reasoning, List<AiToolCallSnapshot> toolCalls, AiUsage? usage, AiFinishReason? finishReason, AiFailure? failure, AiTransportTrace? transportTrace
+ String requestId, int sequence, AiStreamStatus status, String text, String reasoning, Duration? reasoningDuration, List<AiToolCallSnapshot> toolCalls, AiUsage? usage, AiFinishReason? finishReason, AiFailure? failure, AiTransportTrace? transportTrace
 });
 
 
@@ -328,14 +328,15 @@ class _$AiStreamSnapshotCopyWithImpl<$Res>
 
 /// Create a copy of AiStreamSnapshot
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? requestId = null,Object? sequence = null,Object? status = null,Object? text = null,Object? reasoning = null,Object? toolCalls = null,Object? usage = freezed,Object? finishReason = freezed,Object? failure = freezed,Object? transportTrace = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? requestId = null,Object? sequence = null,Object? status = null,Object? text = null,Object? reasoning = null,Object? reasoningDuration = freezed,Object? toolCalls = null,Object? usage = freezed,Object? finishReason = freezed,Object? failure = freezed,Object? transportTrace = freezed,}) {
   return _then(_self.copyWith(
 requestId: null == requestId ? _self.requestId : requestId // ignore: cast_nullable_to_non_nullable
 as String,sequence: null == sequence ? _self.sequence : sequence // ignore: cast_nullable_to_non_nullable
 as int,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as AiStreamStatus,text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
 as String,reasoning: null == reasoning ? _self.reasoning : reasoning // ignore: cast_nullable_to_non_nullable
-as String,toolCalls: null == toolCalls ? _self.toolCalls : toolCalls // ignore: cast_nullable_to_non_nullable
+as String,reasoningDuration: freezed == reasoningDuration ? _self.reasoningDuration : reasoningDuration // ignore: cast_nullable_to_non_nullable
+as Duration?,toolCalls: null == toolCalls ? _self.toolCalls : toolCalls // ignore: cast_nullable_to_non_nullable
 as List<AiToolCallSnapshot>,usage: freezed == usage ? _self.usage : usage // ignore: cast_nullable_to_non_nullable
 as AiUsage?,finishReason: freezed == finishReason ? _self.finishReason : finishReason // ignore: cast_nullable_to_non_nullable
 as AiFinishReason?,failure: freezed == failure ? _self.failure : failure // ignore: cast_nullable_to_non_nullable
@@ -461,10 +462,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String requestId,  int sequence,  AiStreamStatus status,  String text,  String reasoning,  List<AiToolCallSnapshot> toolCalls,  AiUsage? usage,  AiFinishReason? finishReason,  AiFailure? failure,  AiTransportTrace? transportTrace)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String requestId,  int sequence,  AiStreamStatus status,  String text,  String reasoning,  Duration? reasoningDuration,  List<AiToolCallSnapshot> toolCalls,  AiUsage? usage,  AiFinishReason? finishReason,  AiFailure? failure,  AiTransportTrace? transportTrace)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _AiStreamSnapshot() when $default != null:
-return $default(_that.requestId,_that.sequence,_that.status,_that.text,_that.reasoning,_that.toolCalls,_that.usage,_that.finishReason,_that.failure,_that.transportTrace);case _:
+return $default(_that.requestId,_that.sequence,_that.status,_that.text,_that.reasoning,_that.reasoningDuration,_that.toolCalls,_that.usage,_that.finishReason,_that.failure,_that.transportTrace);case _:
   return orElse();
 
 }
@@ -482,10 +483,10 @@ return $default(_that.requestId,_that.sequence,_that.status,_that.text,_that.rea
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String requestId,  int sequence,  AiStreamStatus status,  String text,  String reasoning,  List<AiToolCallSnapshot> toolCalls,  AiUsage? usage,  AiFinishReason? finishReason,  AiFailure? failure,  AiTransportTrace? transportTrace)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String requestId,  int sequence,  AiStreamStatus status,  String text,  String reasoning,  Duration? reasoningDuration,  List<AiToolCallSnapshot> toolCalls,  AiUsage? usage,  AiFinishReason? finishReason,  AiFailure? failure,  AiTransportTrace? transportTrace)  $default,) {final _that = this;
 switch (_that) {
 case _AiStreamSnapshot():
-return $default(_that.requestId,_that.sequence,_that.status,_that.text,_that.reasoning,_that.toolCalls,_that.usage,_that.finishReason,_that.failure,_that.transportTrace);case _:
+return $default(_that.requestId,_that.sequence,_that.status,_that.text,_that.reasoning,_that.reasoningDuration,_that.toolCalls,_that.usage,_that.finishReason,_that.failure,_that.transportTrace);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -502,10 +503,10 @@ return $default(_that.requestId,_that.sequence,_that.status,_that.text,_that.rea
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String requestId,  int sequence,  AiStreamStatus status,  String text,  String reasoning,  List<AiToolCallSnapshot> toolCalls,  AiUsage? usage,  AiFinishReason? finishReason,  AiFailure? failure,  AiTransportTrace? transportTrace)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String requestId,  int sequence,  AiStreamStatus status,  String text,  String reasoning,  Duration? reasoningDuration,  List<AiToolCallSnapshot> toolCalls,  AiUsage? usage,  AiFinishReason? finishReason,  AiFailure? failure,  AiTransportTrace? transportTrace)?  $default,) {final _that = this;
 switch (_that) {
 case _AiStreamSnapshot() when $default != null:
-return $default(_that.requestId,_that.sequence,_that.status,_that.text,_that.reasoning,_that.toolCalls,_that.usage,_that.finishReason,_that.failure,_that.transportTrace);case _:
+return $default(_that.requestId,_that.sequence,_that.status,_that.text,_that.reasoning,_that.reasoningDuration,_that.toolCalls,_that.usage,_that.finishReason,_that.failure,_that.transportTrace);case _:
   return null;
 
 }
@@ -517,7 +518,7 @@ return $default(_that.requestId,_that.sequence,_that.status,_that.text,_that.rea
 
 
 class _AiStreamSnapshot implements AiStreamSnapshot {
-  const _AiStreamSnapshot({required this.requestId, this.sequence = -1, this.status = AiStreamStatus.idle, this.text = '', this.reasoning = '', final  List<AiToolCallSnapshot> toolCalls = const <AiToolCallSnapshot>[], this.usage, this.finishReason, this.failure, this.transportTrace}): _toolCalls = toolCalls;
+  const _AiStreamSnapshot({required this.requestId, this.sequence = -1, this.status = AiStreamStatus.idle, this.text = '', this.reasoning = '', this.reasoningDuration, final  List<AiToolCallSnapshot> toolCalls = const <AiToolCallSnapshot>[], this.usage, this.finishReason, this.failure, this.transportTrace}): _toolCalls = toolCalls;
   
 
 @override final  String requestId;
@@ -525,6 +526,7 @@ class _AiStreamSnapshot implements AiStreamSnapshot {
 @override@JsonKey() final  AiStreamStatus status;
 @override@JsonKey() final  String text;
 @override@JsonKey() final  String reasoning;
+@override final  Duration? reasoningDuration;
  final  List<AiToolCallSnapshot> _toolCalls;
 @override@JsonKey() List<AiToolCallSnapshot> get toolCalls {
   if (_toolCalls is EqualUnmodifiableListView) return _toolCalls;
@@ -547,16 +549,16 @@ _$AiStreamSnapshotCopyWith<_AiStreamSnapshot> get copyWith => __$AiStreamSnapsho
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AiStreamSnapshot&&(identical(other.requestId, requestId) || other.requestId == requestId)&&(identical(other.sequence, sequence) || other.sequence == sequence)&&(identical(other.status, status) || other.status == status)&&(identical(other.text, text) || other.text == text)&&(identical(other.reasoning, reasoning) || other.reasoning == reasoning)&&const DeepCollectionEquality().equals(other._toolCalls, _toolCalls)&&(identical(other.usage, usage) || other.usage == usage)&&(identical(other.finishReason, finishReason) || other.finishReason == finishReason)&&(identical(other.failure, failure) || other.failure == failure)&&(identical(other.transportTrace, transportTrace) || other.transportTrace == transportTrace));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AiStreamSnapshot&&(identical(other.requestId, requestId) || other.requestId == requestId)&&(identical(other.sequence, sequence) || other.sequence == sequence)&&(identical(other.status, status) || other.status == status)&&(identical(other.text, text) || other.text == text)&&(identical(other.reasoning, reasoning) || other.reasoning == reasoning)&&(identical(other.reasoningDuration, reasoningDuration) || other.reasoningDuration == reasoningDuration)&&const DeepCollectionEquality().equals(other._toolCalls, _toolCalls)&&(identical(other.usage, usage) || other.usage == usage)&&(identical(other.finishReason, finishReason) || other.finishReason == finishReason)&&(identical(other.failure, failure) || other.failure == failure)&&(identical(other.transportTrace, transportTrace) || other.transportTrace == transportTrace));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,requestId,sequence,status,text,reasoning,const DeepCollectionEquality().hash(_toolCalls),usage,finishReason,failure,transportTrace);
+int get hashCode => Object.hash(runtimeType,requestId,sequence,status,text,reasoning,reasoningDuration,const DeepCollectionEquality().hash(_toolCalls),usage,finishReason,failure,transportTrace);
 
 @override
 String toString() {
-  return 'AiStreamSnapshot(requestId: $requestId, sequence: $sequence, status: $status, text: $text, reasoning: $reasoning, toolCalls: $toolCalls, usage: $usage, finishReason: $finishReason, failure: $failure, transportTrace: $transportTrace)';
+  return 'AiStreamSnapshot(requestId: $requestId, sequence: $sequence, status: $status, text: $text, reasoning: $reasoning, reasoningDuration: $reasoningDuration, toolCalls: $toolCalls, usage: $usage, finishReason: $finishReason, failure: $failure, transportTrace: $transportTrace)';
 }
 
 
@@ -567,7 +569,7 @@ abstract mixin class _$AiStreamSnapshotCopyWith<$Res> implements $AiStreamSnapsh
   factory _$AiStreamSnapshotCopyWith(_AiStreamSnapshot value, $Res Function(_AiStreamSnapshot) _then) = __$AiStreamSnapshotCopyWithImpl;
 @override @useResult
 $Res call({
- String requestId, int sequence, AiStreamStatus status, String text, String reasoning, List<AiToolCallSnapshot> toolCalls, AiUsage? usage, AiFinishReason? finishReason, AiFailure? failure, AiTransportTrace? transportTrace
+ String requestId, int sequence, AiStreamStatus status, String text, String reasoning, Duration? reasoningDuration, List<AiToolCallSnapshot> toolCalls, AiUsage? usage, AiFinishReason? finishReason, AiFailure? failure, AiTransportTrace? transportTrace
 });
 
 
@@ -584,14 +586,15 @@ class __$AiStreamSnapshotCopyWithImpl<$Res>
 
 /// Create a copy of AiStreamSnapshot
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? requestId = null,Object? sequence = null,Object? status = null,Object? text = null,Object? reasoning = null,Object? toolCalls = null,Object? usage = freezed,Object? finishReason = freezed,Object? failure = freezed,Object? transportTrace = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? requestId = null,Object? sequence = null,Object? status = null,Object? text = null,Object? reasoning = null,Object? reasoningDuration = freezed,Object? toolCalls = null,Object? usage = freezed,Object? finishReason = freezed,Object? failure = freezed,Object? transportTrace = freezed,}) {
   return _then(_AiStreamSnapshot(
 requestId: null == requestId ? _self.requestId : requestId // ignore: cast_nullable_to_non_nullable
 as String,sequence: null == sequence ? _self.sequence : sequence // ignore: cast_nullable_to_non_nullable
 as int,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as AiStreamStatus,text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
 as String,reasoning: null == reasoning ? _self.reasoning : reasoning // ignore: cast_nullable_to_non_nullable
-as String,toolCalls: null == toolCalls ? _self._toolCalls : toolCalls // ignore: cast_nullable_to_non_nullable
+as String,reasoningDuration: freezed == reasoningDuration ? _self.reasoningDuration : reasoningDuration // ignore: cast_nullable_to_non_nullable
+as Duration?,toolCalls: null == toolCalls ? _self._toolCalls : toolCalls // ignore: cast_nullable_to_non_nullable
 as List<AiToolCallSnapshot>,usage: freezed == usage ? _self.usage : usage // ignore: cast_nullable_to_non_nullable
 as AiUsage?,finishReason: freezed == finishReason ? _self.finishReason : finishReason // ignore: cast_nullable_to_non_nullable
 as AiFinishReason?,failure: freezed == failure ? _self.failure : failure // ignore: cast_nullable_to_non_nullable

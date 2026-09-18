@@ -1,4 +1,6 @@
-﻿import 'package:JsxposedX/common/widgets/app_code_editor/app_code_editor.dart';
+import 'package:JsxposedX/core/extensions/context_extensions.dart';
+import 'package:JsxposedX/common/pages/toast.dart';
+import 'package:JsxposedX/common/widgets/app_code_editor/app_code_editor.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_list_card.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_method_card.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_permission_card.dart';
@@ -70,23 +72,29 @@ class AiCodeElementBuilder extends MarkdownElementBuilder {
     );
 
     if (language == 'javascript' || language == 'js') {
-      return AppCodeEditor(
-        controller: controller,
-        language: language,
-        readOnly: true,
-        initialFontSize: (initialFontSize ?? 13) * uiScale,
-        extraActions: extraActions,
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: 4 * uiScale),
+        child: AppCodeEditor(
+          controller: controller,
+          language: language,
+          readOnly: true,
+          initialFontSize: (initialFontSize ?? 13) * uiScale,
+          extraActions: extraActions,
+        ),
       );
     }
 
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: 400 * uiScale, minHeight: 0),
-      child: AppCodeEditor(
-        controller: controller,
-        language: language,
-        readOnly: true,
-        initialFontSize: (initialFontSize ?? 13) * uiScale,
-        extraActions: extraActions,
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4 * uiScale),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: 400 * uiScale, minHeight: 0),
+        child: AppCodeEditor(
+          controller: controller,
+          language: language,
+          readOnly: true,
+          initialFontSize: (initialFontSize ?? 13) * uiScale,
+          extraActions: extraActions,
+        ),
       ),
     );
   }

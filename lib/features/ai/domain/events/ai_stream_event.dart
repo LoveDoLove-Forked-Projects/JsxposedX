@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'package:JsxposedX/features/ai/application/chat/ai_transport_trace.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
 
 part 'ai_stream_event.freezed.dart';

@@ -69,13 +69,22 @@ class AiChatList extends HookConsumerWidget {
       aiChatRuntimeProvider(packageName: packageName).notifier,
     );
     final showJumpToLatest = useState(false);
+    final unreadMessageCount = useState(0);
+    final wasNearLatest = useRef(true);
+    final previousMessageIds = useRef<List<String>>(<String>[]);
+    final previousSessionId = useRef(chatState.currentSessionId);
 
     useEffect(() {
       void updateJumpButton() {
         if (!scrollController.hasClients) return;
-        final shouldShow = scrollController.offset > 120;
+        final nearLatest = scrollController.offset <= 80;
+        wasNearLatest.value = nearLatest;
+        final shouldShow = !nearLatest;
         if (showJumpToLatest.value != shouldShow) {
           showJumpToLatest.value = shouldShow;
+        }
+        if (nearLatest && unreadMessageCount.value != 0) {
+          unreadMessageCount.value = 0;
         }
       }
 
@@ -83,6 +92,42 @@ class AiChatList extends HookConsumerWidget {
       updateJumpButton();
       return () => scrollController.removeListener(updateJumpButton);
     }, [scrollController]);
+
+    final messageIds = messages
+        .map((message) => message.id)
+        .toList(growable: false);
+    useEffect(() {
+      final sessionChanged =
+          previousSessionId.value != chatState.currentSessionId;
+      previousSessionId.value = chatState.currentSessionId;
+      final previousIds = previousMessageIds.value;
+      previousMessageIds.value = messageIds;
+      if (sessionChanged) {
+        unreadMessageCount.value = 0;
+        wasNearLatest.value = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (scrollController.hasClients) scrollController.jumpTo(0);
+        });
+        return null;
+      }
+
+      final addedCount = appendedMessageCount(previousIds, messageIds);
+      if (addedCount == 0) return null;
+      if (wasNearLatest.value) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (scrollController.hasClients && wasNearLatest.value) {
+            scrollController.animateTo(
+              0,
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+            );
+          }
+        });
+      } else {
+        unreadMessageCount.value += addedCount;
+      }
+      return null;
+    }, [chatState.currentSessionId, Object.hashAll(messageIds)]);
 
     if (messages.isEmpty) {
       return LayoutBuilder(
@@ -205,7 +250,6 @@ class AiChatList extends HookConsumerWidget {
                       initialContent: message.content,
                       role: message.role,
                       isError: message.isError,
-                      isToolCalling: message.isToolResultBubble,
                       retryLabel: retryLabel,
                       streamingContentStream:
                           chatNotifier.streamingContentStream,
@@ -232,10 +276,6 @@ class AiChatList extends HookConsumerWidget {
                             content: message.content,
                             role: message.role,
                             isError: message.isError,
-                            isToolCalling:
-                                message.isToolResultBubble &&
-                                !message.content.startsWith('✅') &&
-                                !message.content.startsWith('❌'),
                             retryLabel: retryLabel,
                             onRetry: () => chatNotifier.retryByMessageId(
                               message.sourceMessageId ?? message.id,
@@ -302,13 +342,16 @@ class AiChatList extends HookConsumerWidget {
                       heroTag: null,
                       tooltip: context.isZh ? '回到最新消息' : 'Jump to latest',
                       onPressed: () {
+                        unreadMessageCount.value = 0;
                         scrollController.animateTo(
                           0,
                           duration: const Duration(milliseconds: 220),
                           curve: Curves.easeOutCubic,
                         );
                       },
-                      child: const Icon(Icons.keyboard_double_arrow_down),
+                      child: unreadMessageCount.value > 0
+                          ? _UnreadMessageBadge(count: unreadMessageCount.value)
+                          : const Icon(Icons.keyboard_double_arrow_down),
                     ),
                   ),
                 ),
@@ -317,6 +360,36 @@ class AiChatList extends HookConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+@visibleForTesting
+int appendedMessageCount(List<String> previousIds, List<String> currentIds) {
+  if (previousIds.isEmpty || currentIds.isEmpty) return 0;
+  for (var index = previousIds.length - 1; index >= 0; index--) {
+    final sharedIndex = currentIds.indexOf(previousIds[index]);
+    if (sharedIndex >= 0) {
+      return currentIds.length - sharedIndex - 1;
+    }
+  }
+  return 0;
+}
+
+class _UnreadMessageBadge extends StatelessWidget {
+  const _UnreadMessageBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count > 99 ? '99+' : '$count';
+    return Semantics(
+      label: context.isZh ? '$count 条新消息' : '$count new messages',
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      ),
     );
   }
 }
@@ -414,6 +487,9 @@ class _ChatErrorBanner extends HookWidget {
     final expanded = useState(false);
     final color = context.colorScheme.error;
     final canExpand = detail.length > 180;
+    final lines = detail.split('\n');
+    final title = lines.first;
+    final body = lines.length > 1 ? lines.skip(1).join('\n') : detail;
     return Container(
       width: double.infinity,
       margin: EdgeInsets.fromLTRB(16 * scale, 8 * scale, 16 * scale, 0),
@@ -446,15 +522,33 @@ class _ChatErrorBanner extends HookWidget {
                   );
                 }
               },
-              child: Text(
-                detail,
-                maxLines: expanded.value ? null : 3,
-                overflow: expanded.value ? null : TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: context.colorScheme.onErrorContainer,
-                  fontSize: 12 * scale,
-                  height: 1.35,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: expanded.value ? null : (canExpand ? 2 : 3),
+                    overflow: expanded.value ? null : TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.colorScheme.onErrorContainer,
+                      fontSize: 12 * scale,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                  if (expanded.value && body != title) ...[
+                    SizedBox(height: 6 * scale),
+                    Text(
+                      body,
+                      style: TextStyle(
+                        color: context.colorScheme.onErrorContainer.withValues(alpha: 0.8),
+                        fontSize: 11.5 * scale,
+                        fontFamily: 'monospace',
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -618,7 +712,6 @@ class _StreamingAiChatBubble extends HookWidget {
     required this.initialContent,
     required this.role,
     required this.isError,
-    required this.isToolCalling,
     required this.retryLabel,
     required this.streamingContentStream,
     required this.streamingThinkingStream,
@@ -630,7 +723,6 @@ class _StreamingAiChatBubble extends HookWidget {
   final String initialContent;
   final String role;
   final bool isError;
-  final bool isToolCalling;
   final String retryLabel;
   final Stream<String> streamingContentStream;
   final Stream<bool> streamingThinkingStream;
@@ -699,7 +791,6 @@ class _StreamingAiChatBubble extends HookWidget {
         content: content.value,
         role: role,
         isError: isError,
-        isToolCalling: isToolCalling,
         retryLabel: retryLabel,
         onRetry: onRetry,
         packageName: packageName,

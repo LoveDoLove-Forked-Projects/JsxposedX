@@ -10,7 +10,6 @@ import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble_toolbar/bubble_toolbar.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble_content/widgets/ai_code_element_builder.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble_content/widgets/dot_loading_indicator.dart';
-import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble_content/widgets/tool_calling_indicator.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_bubble/bubble_content/widgets/tool_result_card.dart';
 import 'package:markdown/markdown.dart' as md;
 
@@ -36,9 +35,6 @@ abstract class BaseBubbleContentPart {
     if (state.isToolResult) {
       return buildToolResult(context, state);
     }
-    if (state.isToolCalling) {
-      return buildToolCalling(context, state);
-    }
     return buildMarkdown(context, state, toolbarPart: toolbarPart);
   }
 
@@ -56,25 +52,20 @@ abstract class BaseBubbleContentPart {
   Widget buildToolInvocations(BuildContext context, BubbleState state) {
     final scale = AiChatCompactScope.scaleOf(context);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var index = 0; index < state.toolInvocations.length; index++) ...[
-          if (index > 0) SizedBox(height: 8 * scale),
-          ToolResultCard(
-            content: state.content,
-            invocation: state.toolInvocations[index],
-            onRetry: state.onRetry,
-          ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var index = 0; index < state.toolInvocations.length; index++) ...[
+            if (index > 0) SizedBox(height: 8 * scale),
+            ToolResultCard(
+              content: state.content,
+              invocation: state.toolInvocations[index],
+              onRetry: state.onRetry,
+            ),
+          ],
         ],
-      ],
-    );
-  }
-
-  @protected
-  Widget buildToolCalling(BuildContext context, BubbleState state) {
-    return ToolCallingIndicator(content: state.content);
-  }
+      );
+    }
 
   @protected
   Widget buildUserAttachments(
@@ -126,6 +117,7 @@ abstract class BaseBubbleContentPart {
         toolbarPart: toolbarPart,
         thinkingContent: parts.thinking,
         answerContent: parts.answer,
+        duration: parts.duration,
         theme: buildMarkdownTheme(context, state),
       );
     }
@@ -187,6 +179,20 @@ abstract class BaseBubbleContentPart {
       listBullet: TextStyle(
         color: state.isUser ? Colors.white : context.colorScheme.primary,
       ),
+      tableBorder: TableBorder.all(
+        color: context.theme.dividerColor.withValues(alpha: 0.2),
+        width: 1,
+      ),
+      tableBody: TextStyle(
+        fontSize: (isCompact ? 12 : 14) * scale,
+        color: context.isDark ? Colors.white.withValues(alpha: 0.8) : Colors.black87,
+      ),
+      tableHead: TextStyle(
+        fontSize: (isCompact ? 12 : 14) * scale,
+        fontWeight: FontWeight.w600,
+        color: context.isDark ? Colors.white : Colors.black,
+      ),
+      tableCellsPadding: EdgeInsets.all(8 * scale),
     );
   }
 
@@ -221,16 +227,17 @@ abstract class BaseBubbleContentPart {
         builders: {
           if (cursorEnabled) 'streaming-cursor': _StreamingCursorBuilder(),
           'code': AiCodeElementBuilder(
-            state: state,
-            toolbarPart: toolbarPart,
-            uiScale: AiChatCompactScope.scaleOf(context),
-          ),
-        },
-        shrinkWrap: true,
-        fitContent: true,
-      ),
-    );
-  }
+          state: state,
+          toolbarPart: toolbarPart,
+          uiScale: AiChatCompactScope.scaleOf(context),
+        ),
+        'table': _TableElementBuilder(uiScale: AiChatCompactScope.scaleOf(context)),
+      },
+      shrinkWrap: true,
+      fitContent: true,
+    ),
+  );
+}
 }
 
 class DefaultBubbleContentPart extends BaseBubbleContentPart {
@@ -292,6 +299,7 @@ class _ThinkingMarkdownContent extends HookWidget {
     required this.toolbarPart,
     required this.thinkingContent,
     required this.answerContent,
+    required this.duration,
     required this.theme,
   });
 
@@ -299,6 +307,7 @@ class _ThinkingMarkdownContent extends HookWidget {
   final BaseBubbleToolbarPart toolbarPart;
   final String thinkingContent;
   final String answerContent;
+  final Duration? duration;
   final MarkdownStyleSheet theme;
 
   @override
@@ -358,6 +367,17 @@ class _ThinkingMarkdownContent extends HookWidget {
                           ),
                         ),
                       ),
+                      if (duration != null) ...[
+                        Text(
+                          '${(duration!.inMilliseconds / 1000).toStringAsFixed(1)}s',
+                          style: TextStyle(
+                            fontSize: (isCompact ? 10.5 : 11.5) * scale,
+                            fontFamily: 'monospace',
+                            color: context.colorScheme.primary.withValues(alpha: 0.7),
+                          ),
+                        ),
+                        SizedBox(width: 8 * scale),
+                      ],
                       Icon(
                         expanded.value ? Icons.expand_less : Icons.expand_more,
                         size: (isCompact ? 14 : 16) * scale,
@@ -384,12 +404,13 @@ class _ThinkingMarkdownContent extends HookWidget {
                         selectable: false,
                         builders: {
                           'code': AiCodeElementBuilder(
-                            state: state,
-                            toolbarPart: toolbarPart,
-                            uiScale: scale,
-                          ),
-                        },
-                        shrinkWrap: true,
+                          state: state,
+                          toolbarPart: toolbarPart,
+                          uiScale: scale,
+                        ),
+                        'table': _TableElementBuilder(uiScale: scale),
+                      },
+                      shrinkWrap: true,
                         fitContent: true,
                       ),
                     ),
@@ -428,6 +449,7 @@ class _ThinkingMarkdownContent extends HookWidget {
                   toolbarPart: toolbarPart,
                   uiScale: scale,
                 ),
+                'table': _TableElementBuilder(uiScale: scale),
               },
               shrinkWrap: true,
               fitContent: true,
@@ -443,6 +465,73 @@ class _ThinkingMarkdownContent extends HookWidget {
         ],
       ],
     );
+  }
+}
+
+class _TableElementBuilder extends MarkdownElementBuilder {
+  _TableElementBuilder({required this.uiScale});
+
+  final double uiScale;
+
+  @override
+  Widget visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Table(
+        defaultColumnWidth: const IntrinsicColumnWidth(),
+        border: TableBorder.all(
+          color: context.theme.dividerColor.withValues(alpha: 0.5),
+          width: 1,
+        ),
+        children: _parseTableRows(element, context),
+      ),
+    );
+  }
+
+  List<TableRow> _parseTableRows(md.Element tableElement, BuildContext context) {
+    final rows = <TableRow>[];
+    for (final child in tableElement.children!) {
+      if (child is md.Element) {
+        if (child.tag == 'thead') {
+          rows.addAll(_parseRows(child, context, isHeader: true));
+        } else if (child.tag == 'tbody') {
+          rows.addAll(_parseRows(child, context, isHeader: false));
+        }
+      }
+    }
+    return rows;
+  }
+
+  List<TableRow> _parseRows(md.Element parent, BuildContext context, {required bool isHeader}) {
+    final rows = <TableRow>[];
+    for (final child in parent.children!) {
+      if (child is md.Element && child.tag == 'tr') {
+        final cells = <Widget>[];
+        for (final cell in child.children!) {
+          if (cell is md.Element) {
+            cells.add(
+              Padding(
+                padding: EdgeInsets.all(8.0 * uiScale),
+                child: Text(
+                  cell.textContent,
+                  style: TextStyle(
+                    fontWeight: isHeader ? FontWeight.bold : FontWeight.normal,
+                    fontSize: 13.0 * uiScale,
+                  ),
+                ),
+              ),
+            );
+          }
+        }
+        rows.add(TableRow(children: cells));
+      }
+    }
+    return rows;
   }
 }
 

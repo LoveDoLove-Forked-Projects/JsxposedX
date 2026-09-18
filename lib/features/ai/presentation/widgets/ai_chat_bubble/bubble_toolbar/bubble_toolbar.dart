@@ -81,10 +81,10 @@ abstract class BaseBubbleToolbarPart {
                 onRegenerate();
               },
             ),
-          if (rawDetails != null && rawDetails.trim().isNotEmpty)
+      if (rawDetails != null && rawDetails.trim().isNotEmpty)
             _BubbleActionTile(
               icon: Icons.receipt_long_rounded,
-              title: context.isZh ? '查看原始响应' : 'View raw response',
+              title: context.isZh ? '查看原始响应 (Trace)' : 'View raw response (Trace)',
               onTap: () {
                 Navigator.of(context).pop();
                 showRawResponseSheet(

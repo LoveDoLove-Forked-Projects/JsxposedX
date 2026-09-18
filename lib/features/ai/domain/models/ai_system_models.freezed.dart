@@ -1344,7 +1344,7 @@ as Map<String, Object?>,
 /// @nodoc
 mixin _$AiMessage {
 
- String get id; String get conversationId; AiMessageRole get role; List<AiContentPart> get parts; AiMessageStatus get status; String? get parentId; AiUsage? get usage; AiFailure? get failure; DateTime get createdAt; DateTime? get completedAt;
+ String get id; String get conversationId; AiMessageRole get role; List<AiContentPart> get parts; AiMessageStatus get status; AiUsage? get usage; AiFailure? get failure; AiTransportTrace? get transportTrace; String? get parentId; DateTime get createdAt; DateTime? get completedAt;
 /// Create a copy of AiMessage
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1355,16 +1355,16 @@ $AiMessageCopyWith<AiMessage> get copyWith => _$AiMessageCopyWithImpl<AiMessage>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is AiMessage&&(identical(other.id, id) || other.id == id)&&(identical(other.conversationId, conversationId) || other.conversationId == conversationId)&&(identical(other.role, role) || other.role == role)&&const DeepCollectionEquality().equals(other.parts, parts)&&(identical(other.status, status) || other.status == status)&&(identical(other.parentId, parentId) || other.parentId == parentId)&&(identical(other.usage, usage) || other.usage == usage)&&(identical(other.failure, failure) || other.failure == failure)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.completedAt, completedAt) || other.completedAt == completedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AiMessage&&(identical(other.id, id) || other.id == id)&&(identical(other.conversationId, conversationId) || other.conversationId == conversationId)&&(identical(other.role, role) || other.role == role)&&const DeepCollectionEquality().equals(other.parts, parts)&&(identical(other.status, status) || other.status == status)&&(identical(other.usage, usage) || other.usage == usage)&&(identical(other.failure, failure) || other.failure == failure)&&(identical(other.transportTrace, transportTrace) || other.transportTrace == transportTrace)&&(identical(other.parentId, parentId) || other.parentId == parentId)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.completedAt, completedAt) || other.completedAt == completedAt));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,conversationId,role,const DeepCollectionEquality().hash(parts),status,parentId,usage,failure,createdAt,completedAt);
+int get hashCode => Object.hash(runtimeType,id,conversationId,role,const DeepCollectionEquality().hash(parts),status,usage,failure,transportTrace,parentId,createdAt,completedAt);
 
 @override
 String toString() {
-  return 'AiMessage(id: $id, conversationId: $conversationId, role: $role, parts: $parts, status: $status, parentId: $parentId, usage: $usage, failure: $failure, createdAt: $createdAt, completedAt: $completedAt)';
+  return 'AiMessage(id: $id, conversationId: $conversationId, role: $role, parts: $parts, status: $status, usage: $usage, failure: $failure, transportTrace: $transportTrace, parentId: $parentId, createdAt: $createdAt, completedAt: $completedAt)';
 }
 
 
@@ -1375,11 +1375,11 @@ abstract mixin class $AiMessageCopyWith<$Res>  {
   factory $AiMessageCopyWith(AiMessage value, $Res Function(AiMessage) _then) = _$AiMessageCopyWithImpl;
 @useResult
 $Res call({
- String id, String conversationId, AiMessageRole role, List<AiContentPart> parts, AiMessageStatus status, String? parentId, AiUsage? usage, AiFailure? failure, DateTime createdAt, DateTime? completedAt
+ String id, String conversationId, AiMessageRole role, List<AiContentPart> parts, AiMessageStatus status, AiUsage? usage, AiFailure? failure, AiTransportTrace? transportTrace, String? parentId, DateTime createdAt, DateTime? completedAt
 });
 
 
-$AiUsageCopyWith<$Res>? get usage;$AiFailureCopyWith<$Res>? get failure;
+$AiUsageCopyWith<$Res>? get usage;$AiFailureCopyWith<$Res>? get failure;$AiTransportTraceCopyWith<$Res>? get transportTrace;
 
 }
 /// @nodoc
@@ -1392,17 +1392,18 @@ class _$AiMessageCopyWithImpl<$Res>
 
 /// Create a copy of AiMessage
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? conversationId = null,Object? role = null,Object? parts = null,Object? status = null,Object? parentId = freezed,Object? usage = freezed,Object? failure = freezed,Object? createdAt = null,Object? completedAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? conversationId = null,Object? role = null,Object? parts = null,Object? status = null,Object? usage = freezed,Object? failure = freezed,Object? transportTrace = freezed,Object? parentId = freezed,Object? createdAt = null,Object? completedAt = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,conversationId: null == conversationId ? _self.conversationId : conversationId // ignore: cast_nullable_to_non_nullable
 as String,role: null == role ? _self.role : role // ignore: cast_nullable_to_non_nullable
 as AiMessageRole,parts: null == parts ? _self.parts : parts // ignore: cast_nullable_to_non_nullable
 as List<AiContentPart>,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as AiMessageStatus,parentId: freezed == parentId ? _self.parentId : parentId // ignore: cast_nullable_to_non_nullable
-as String?,usage: freezed == usage ? _self.usage : usage // ignore: cast_nullable_to_non_nullable
+as AiMessageStatus,usage: freezed == usage ? _self.usage : usage // ignore: cast_nullable_to_non_nullable
 as AiUsage?,failure: freezed == failure ? _self.failure : failure // ignore: cast_nullable_to_non_nullable
-as AiFailure?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as AiFailure?,transportTrace: freezed == transportTrace ? _self.transportTrace : transportTrace // ignore: cast_nullable_to_non_nullable
+as AiTransportTrace?,parentId: freezed == parentId ? _self.parentId : parentId // ignore: cast_nullable_to_non_nullable
+as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,completedAt: freezed == completedAt ? _self.completedAt : completedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,
   ));
@@ -1430,6 +1431,18 @@ $AiFailureCopyWith<$Res>? get failure {
 
   return $AiFailureCopyWith<$Res>(_self.failure!, (value) {
     return _then(_self.copyWith(failure: value));
+  });
+}/// Create a copy of AiMessage
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$AiTransportTraceCopyWith<$Res>? get transportTrace {
+    if (_self.transportTrace == null) {
+    return null;
+  }
+
+  return $AiTransportTraceCopyWith<$Res>(_self.transportTrace!, (value) {
+    return _then(_self.copyWith(transportTrace: value));
   });
 }
 }
@@ -1513,10 +1526,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String conversationId,  AiMessageRole role,  List<AiContentPart> parts,  AiMessageStatus status,  String? parentId,  AiUsage? usage,  AiFailure? failure,  DateTime createdAt,  DateTime? completedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String conversationId,  AiMessageRole role,  List<AiContentPart> parts,  AiMessageStatus status,  AiUsage? usage,  AiFailure? failure,  AiTransportTrace? transportTrace,  String? parentId,  DateTime createdAt,  DateTime? completedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _AiMessage() when $default != null:
-return $default(_that.id,_that.conversationId,_that.role,_that.parts,_that.status,_that.parentId,_that.usage,_that.failure,_that.createdAt,_that.completedAt);case _:
+return $default(_that.id,_that.conversationId,_that.role,_that.parts,_that.status,_that.usage,_that.failure,_that.transportTrace,_that.parentId,_that.createdAt,_that.completedAt);case _:
   return orElse();
 
 }
@@ -1534,10 +1547,10 @@ return $default(_that.id,_that.conversationId,_that.role,_that.parts,_that.statu
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String conversationId,  AiMessageRole role,  List<AiContentPart> parts,  AiMessageStatus status,  String? parentId,  AiUsage? usage,  AiFailure? failure,  DateTime createdAt,  DateTime? completedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String conversationId,  AiMessageRole role,  List<AiContentPart> parts,  AiMessageStatus status,  AiUsage? usage,  AiFailure? failure,  AiTransportTrace? transportTrace,  String? parentId,  DateTime createdAt,  DateTime? completedAt)  $default,) {final _that = this;
 switch (_that) {
 case _AiMessage():
-return $default(_that.id,_that.conversationId,_that.role,_that.parts,_that.status,_that.parentId,_that.usage,_that.failure,_that.createdAt,_that.completedAt);case _:
+return $default(_that.id,_that.conversationId,_that.role,_that.parts,_that.status,_that.usage,_that.failure,_that.transportTrace,_that.parentId,_that.createdAt,_that.completedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1554,10 +1567,10 @@ return $default(_that.id,_that.conversationId,_that.role,_that.parts,_that.statu
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String conversationId,  AiMessageRole role,  List<AiContentPart> parts,  AiMessageStatus status,  String? parentId,  AiUsage? usage,  AiFailure? failure,  DateTime createdAt,  DateTime? completedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String conversationId,  AiMessageRole role,  List<AiContentPart> parts,  AiMessageStatus status,  AiUsage? usage,  AiFailure? failure,  AiTransportTrace? transportTrace,  String? parentId,  DateTime createdAt,  DateTime? completedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _AiMessage() when $default != null:
-return $default(_that.id,_that.conversationId,_that.role,_that.parts,_that.status,_that.parentId,_that.usage,_that.failure,_that.createdAt,_that.completedAt);case _:
+return $default(_that.id,_that.conversationId,_that.role,_that.parts,_that.status,_that.usage,_that.failure,_that.transportTrace,_that.parentId,_that.createdAt,_that.completedAt);case _:
   return null;
 
 }
@@ -1569,7 +1582,7 @@ return $default(_that.id,_that.conversationId,_that.role,_that.parts,_that.statu
 
 
 class _AiMessage implements AiMessage {
-  const _AiMessage({required this.id, required this.conversationId, required this.role, required final  List<AiContentPart> parts, this.status = AiMessageStatus.completed, this.parentId, this.usage, this.failure, required this.createdAt, this.completedAt}): _parts = parts;
+  const _AiMessage({required this.id, required this.conversationId, required this.role, required final  List<AiContentPart> parts, this.status = AiMessageStatus.completed, this.usage, this.failure, this.transportTrace, this.parentId, required this.createdAt, this.completedAt}): _parts = parts;
   
 
 @override final  String id;
@@ -1583,9 +1596,10 @@ class _AiMessage implements AiMessage {
 }
 
 @override@JsonKey() final  AiMessageStatus status;
-@override final  String? parentId;
 @override final  AiUsage? usage;
 @override final  AiFailure? failure;
+@override final  AiTransportTrace? transportTrace;
+@override final  String? parentId;
 @override final  DateTime createdAt;
 @override final  DateTime? completedAt;
 
@@ -1599,16 +1613,16 @@ _$AiMessageCopyWith<_AiMessage> get copyWith => __$AiMessageCopyWithImpl<_AiMess
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AiMessage&&(identical(other.id, id) || other.id == id)&&(identical(other.conversationId, conversationId) || other.conversationId == conversationId)&&(identical(other.role, role) || other.role == role)&&const DeepCollectionEquality().equals(other._parts, _parts)&&(identical(other.status, status) || other.status == status)&&(identical(other.parentId, parentId) || other.parentId == parentId)&&(identical(other.usage, usage) || other.usage == usage)&&(identical(other.failure, failure) || other.failure == failure)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.completedAt, completedAt) || other.completedAt == completedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AiMessage&&(identical(other.id, id) || other.id == id)&&(identical(other.conversationId, conversationId) || other.conversationId == conversationId)&&(identical(other.role, role) || other.role == role)&&const DeepCollectionEquality().equals(other._parts, _parts)&&(identical(other.status, status) || other.status == status)&&(identical(other.usage, usage) || other.usage == usage)&&(identical(other.failure, failure) || other.failure == failure)&&(identical(other.transportTrace, transportTrace) || other.transportTrace == transportTrace)&&(identical(other.parentId, parentId) || other.parentId == parentId)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.completedAt, completedAt) || other.completedAt == completedAt));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,conversationId,role,const DeepCollectionEquality().hash(_parts),status,parentId,usage,failure,createdAt,completedAt);
+int get hashCode => Object.hash(runtimeType,id,conversationId,role,const DeepCollectionEquality().hash(_parts),status,usage,failure,transportTrace,parentId,createdAt,completedAt);
 
 @override
 String toString() {
-  return 'AiMessage(id: $id, conversationId: $conversationId, role: $role, parts: $parts, status: $status, parentId: $parentId, usage: $usage, failure: $failure, createdAt: $createdAt, completedAt: $completedAt)';
+  return 'AiMessage(id: $id, conversationId: $conversationId, role: $role, parts: $parts, status: $status, usage: $usage, failure: $failure, transportTrace: $transportTrace, parentId: $parentId, createdAt: $createdAt, completedAt: $completedAt)';
 }
 
 
@@ -1619,11 +1633,11 @@ abstract mixin class _$AiMessageCopyWith<$Res> implements $AiMessageCopyWith<$Re
   factory _$AiMessageCopyWith(_AiMessage value, $Res Function(_AiMessage) _then) = __$AiMessageCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String conversationId, AiMessageRole role, List<AiContentPart> parts, AiMessageStatus status, String? parentId, AiUsage? usage, AiFailure? failure, DateTime createdAt, DateTime? completedAt
+ String id, String conversationId, AiMessageRole role, List<AiContentPart> parts, AiMessageStatus status, AiUsage? usage, AiFailure? failure, AiTransportTrace? transportTrace, String? parentId, DateTime createdAt, DateTime? completedAt
 });
 
 
-@override $AiUsageCopyWith<$Res>? get usage;@override $AiFailureCopyWith<$Res>? get failure;
+@override $AiUsageCopyWith<$Res>? get usage;@override $AiFailureCopyWith<$Res>? get failure;@override $AiTransportTraceCopyWith<$Res>? get transportTrace;
 
 }
 /// @nodoc
@@ -1636,17 +1650,18 @@ class __$AiMessageCopyWithImpl<$Res>
 
 /// Create a copy of AiMessage
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? conversationId = null,Object? role = null,Object? parts = null,Object? status = null,Object? parentId = freezed,Object? usage = freezed,Object? failure = freezed,Object? createdAt = null,Object? completedAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? conversationId = null,Object? role = null,Object? parts = null,Object? status = null,Object? usage = freezed,Object? failure = freezed,Object? transportTrace = freezed,Object? parentId = freezed,Object? createdAt = null,Object? completedAt = freezed,}) {
   return _then(_AiMessage(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,conversationId: null == conversationId ? _self.conversationId : conversationId // ignore: cast_nullable_to_non_nullable
 as String,role: null == role ? _self.role : role // ignore: cast_nullable_to_non_nullable
 as AiMessageRole,parts: null == parts ? _self._parts : parts // ignore: cast_nullable_to_non_nullable
 as List<AiContentPart>,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as AiMessageStatus,parentId: freezed == parentId ? _self.parentId : parentId // ignore: cast_nullable_to_non_nullable
-as String?,usage: freezed == usage ? _self.usage : usage // ignore: cast_nullable_to_non_nullable
+as AiMessageStatus,usage: freezed == usage ? _self.usage : usage // ignore: cast_nullable_to_non_nullable
 as AiUsage?,failure: freezed == failure ? _self.failure : failure // ignore: cast_nullable_to_non_nullable
-as AiFailure?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as AiFailure?,transportTrace: freezed == transportTrace ? _self.transportTrace : transportTrace // ignore: cast_nullable_to_non_nullable
+as AiTransportTrace?,parentId: freezed == parentId ? _self.parentId : parentId // ignore: cast_nullable_to_non_nullable
+as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,completedAt: freezed == completedAt ? _self.completedAt : completedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,
   ));
@@ -1675,6 +1690,18 @@ $AiFailureCopyWith<$Res>? get failure {
 
   return $AiFailureCopyWith<$Res>(_self.failure!, (value) {
     return _then(_self.copyWith(failure: value));
+  });
+}/// Create a copy of AiMessage
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$AiTransportTraceCopyWith<$Res>? get transportTrace {
+    if (_self.transportTrace == null) {
+    return null;
+  }
+
+  return $AiTransportTraceCopyWith<$Res>(_self.transportTrace!, (value) {
+    return _then(_self.copyWith(transportTrace: value));
   });
 }
 }
@@ -5132,7 +5159,7 @@ as int,
 /// @nodoc
 mixin _$AiFailure {
 
- AiFailureCode get code; String get messageKey; bool get retryable; int? get httpStatus; String? get providerRequestId;
+ AiFailureCode get code; String get messageKey; bool get retryable; int? get httpStatus; String? get providerRequestId; String? get detail;
 /// Create a copy of AiFailure
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -5143,16 +5170,16 @@ $AiFailureCopyWith<AiFailure> get copyWith => _$AiFailureCopyWithImpl<AiFailure>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is AiFailure&&(identical(other.code, code) || other.code == code)&&(identical(other.messageKey, messageKey) || other.messageKey == messageKey)&&(identical(other.retryable, retryable) || other.retryable == retryable)&&(identical(other.httpStatus, httpStatus) || other.httpStatus == httpStatus)&&(identical(other.providerRequestId, providerRequestId) || other.providerRequestId == providerRequestId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AiFailure&&(identical(other.code, code) || other.code == code)&&(identical(other.messageKey, messageKey) || other.messageKey == messageKey)&&(identical(other.retryable, retryable) || other.retryable == retryable)&&(identical(other.httpStatus, httpStatus) || other.httpStatus == httpStatus)&&(identical(other.providerRequestId, providerRequestId) || other.providerRequestId == providerRequestId)&&(identical(other.detail, detail) || other.detail == detail));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,code,messageKey,retryable,httpStatus,providerRequestId);
+int get hashCode => Object.hash(runtimeType,code,messageKey,retryable,httpStatus,providerRequestId,detail);
 
 @override
 String toString() {
-  return 'AiFailure(code: $code, messageKey: $messageKey, retryable: $retryable, httpStatus: $httpStatus, providerRequestId: $providerRequestId)';
+  return 'AiFailure(code: $code, messageKey: $messageKey, retryable: $retryable, httpStatus: $httpStatus, providerRequestId: $providerRequestId, detail: $detail)';
 }
 
 
@@ -5163,7 +5190,7 @@ abstract mixin class $AiFailureCopyWith<$Res>  {
   factory $AiFailureCopyWith(AiFailure value, $Res Function(AiFailure) _then) = _$AiFailureCopyWithImpl;
 @useResult
 $Res call({
- AiFailureCode code, String messageKey, bool retryable, int? httpStatus, String? providerRequestId
+ AiFailureCode code, String messageKey, bool retryable, int? httpStatus, String? providerRequestId, String? detail
 });
 
 
@@ -5180,13 +5207,14 @@ class _$AiFailureCopyWithImpl<$Res>
 
 /// Create a copy of AiFailure
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? code = null,Object? messageKey = null,Object? retryable = null,Object? httpStatus = freezed,Object? providerRequestId = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? code = null,Object? messageKey = null,Object? retryable = null,Object? httpStatus = freezed,Object? providerRequestId = freezed,Object? detail = freezed,}) {
   return _then(_self.copyWith(
 code: null == code ? _self.code : code // ignore: cast_nullable_to_non_nullable
 as AiFailureCode,messageKey: null == messageKey ? _self.messageKey : messageKey // ignore: cast_nullable_to_non_nullable
 as String,retryable: null == retryable ? _self.retryable : retryable // ignore: cast_nullable_to_non_nullable
 as bool,httpStatus: freezed == httpStatus ? _self.httpStatus : httpStatus // ignore: cast_nullable_to_non_nullable
 as int?,providerRequestId: freezed == providerRequestId ? _self.providerRequestId : providerRequestId // ignore: cast_nullable_to_non_nullable
+as String?,detail: freezed == detail ? _self.detail : detail // ignore: cast_nullable_to_non_nullable
 as String?,
   ));
 }
@@ -5272,10 +5300,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( AiFailureCode code,  String messageKey,  bool retryable,  int? httpStatus,  String? providerRequestId)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( AiFailureCode code,  String messageKey,  bool retryable,  int? httpStatus,  String? providerRequestId,  String? detail)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _AiFailure() when $default != null:
-return $default(_that.code,_that.messageKey,_that.retryable,_that.httpStatus,_that.providerRequestId);case _:
+return $default(_that.code,_that.messageKey,_that.retryable,_that.httpStatus,_that.providerRequestId,_that.detail);case _:
   return orElse();
 
 }
@@ -5293,10 +5321,10 @@ return $default(_that.code,_that.messageKey,_that.retryable,_that.httpStatus,_th
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( AiFailureCode code,  String messageKey,  bool retryable,  int? httpStatus,  String? providerRequestId)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( AiFailureCode code,  String messageKey,  bool retryable,  int? httpStatus,  String? providerRequestId,  String? detail)  $default,) {final _that = this;
 switch (_that) {
 case _AiFailure():
-return $default(_that.code,_that.messageKey,_that.retryable,_that.httpStatus,_that.providerRequestId);case _:
+return $default(_that.code,_that.messageKey,_that.retryable,_that.httpStatus,_that.providerRequestId,_that.detail);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -5313,10 +5341,10 @@ return $default(_that.code,_that.messageKey,_that.retryable,_that.httpStatus,_th
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( AiFailureCode code,  String messageKey,  bool retryable,  int? httpStatus,  String? providerRequestId)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( AiFailureCode code,  String messageKey,  bool retryable,  int? httpStatus,  String? providerRequestId,  String? detail)?  $default,) {final _that = this;
 switch (_that) {
 case _AiFailure() when $default != null:
-return $default(_that.code,_that.messageKey,_that.retryable,_that.httpStatus,_that.providerRequestId);case _:
+return $default(_that.code,_that.messageKey,_that.retryable,_that.httpStatus,_that.providerRequestId,_that.detail);case _:
   return null;
 
 }
@@ -5328,7 +5356,7 @@ return $default(_that.code,_that.messageKey,_that.retryable,_that.httpStatus,_th
 
 
 class _AiFailure implements AiFailure {
-  const _AiFailure({required this.code, required this.messageKey, this.retryable = false, this.httpStatus, this.providerRequestId});
+  const _AiFailure({required this.code, required this.messageKey, this.retryable = false, this.httpStatus, this.providerRequestId, this.detail});
   
 
 @override final  AiFailureCode code;
@@ -5336,6 +5364,7 @@ class _AiFailure implements AiFailure {
 @override@JsonKey() final  bool retryable;
 @override final  int? httpStatus;
 @override final  String? providerRequestId;
+@override final  String? detail;
 
 /// Create a copy of AiFailure
 /// with the given fields replaced by the non-null parameter values.
@@ -5347,16 +5376,16 @@ _$AiFailureCopyWith<_AiFailure> get copyWith => __$AiFailureCopyWithImpl<_AiFail
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AiFailure&&(identical(other.code, code) || other.code == code)&&(identical(other.messageKey, messageKey) || other.messageKey == messageKey)&&(identical(other.retryable, retryable) || other.retryable == retryable)&&(identical(other.httpStatus, httpStatus) || other.httpStatus == httpStatus)&&(identical(other.providerRequestId, providerRequestId) || other.providerRequestId == providerRequestId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AiFailure&&(identical(other.code, code) || other.code == code)&&(identical(other.messageKey, messageKey) || other.messageKey == messageKey)&&(identical(other.retryable, retryable) || other.retryable == retryable)&&(identical(other.httpStatus, httpStatus) || other.httpStatus == httpStatus)&&(identical(other.providerRequestId, providerRequestId) || other.providerRequestId == providerRequestId)&&(identical(other.detail, detail) || other.detail == detail));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,code,messageKey,retryable,httpStatus,providerRequestId);
+int get hashCode => Object.hash(runtimeType,code,messageKey,retryable,httpStatus,providerRequestId,detail);
 
 @override
 String toString() {
-  return 'AiFailure(code: $code, messageKey: $messageKey, retryable: $retryable, httpStatus: $httpStatus, providerRequestId: $providerRequestId)';
+  return 'AiFailure(code: $code, messageKey: $messageKey, retryable: $retryable, httpStatus: $httpStatus, providerRequestId: $providerRequestId, detail: $detail)';
 }
 
 
@@ -5367,7 +5396,7 @@ abstract mixin class _$AiFailureCopyWith<$Res> implements $AiFailureCopyWith<$Re
   factory _$AiFailureCopyWith(_AiFailure value, $Res Function(_AiFailure) _then) = __$AiFailureCopyWithImpl;
 @override @useResult
 $Res call({
- AiFailureCode code, String messageKey, bool retryable, int? httpStatus, String? providerRequestId
+ AiFailureCode code, String messageKey, bool retryable, int? httpStatus, String? providerRequestId, String? detail
 });
 
 
@@ -5384,13 +5413,14 @@ class __$AiFailureCopyWithImpl<$Res>
 
 /// Create a copy of AiFailure
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? code = null,Object? messageKey = null,Object? retryable = null,Object? httpStatus = freezed,Object? providerRequestId = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? code = null,Object? messageKey = null,Object? retryable = null,Object? httpStatus = freezed,Object? providerRequestId = freezed,Object? detail = freezed,}) {
   return _then(_AiFailure(
 code: null == code ? _self.code : code // ignore: cast_nullable_to_non_nullable
 as AiFailureCode,messageKey: null == messageKey ? _self.messageKey : messageKey // ignore: cast_nullable_to_non_nullable
 as String,retryable: null == retryable ? _self.retryable : retryable // ignore: cast_nullable_to_non_nullable
 as bool,httpStatus: freezed == httpStatus ? _self.httpStatus : httpStatus // ignore: cast_nullable_to_non_nullable
 as int?,providerRequestId: freezed == providerRequestId ? _self.providerRequestId : providerRequestId // ignore: cast_nullable_to_non_nullable
+as String?,detail: freezed == detail ? _self.detail : detail // ignore: cast_nullable_to_non_nullable
 as String?,
   ));
 }

@@ -16,7 +16,6 @@ class MemoryAiChatBubble extends BaseAiChatBubble {
     required super.role,
     super.isError,
     super.onRetry,
-    super.isToolCalling,
     super.packageName,
     super.retryLabel,
     super.loadingHint,
@@ -35,7 +34,6 @@ class MemoryAiChatBubble extends BaseAiChatBubble {
       role: role,
       isError: isError,
       onRetry: onRetry,
-      isToolCalling: isToolCalling,
       packageName: packageName,
       retryLabel: retryLabel,
       loadingHint: loadingHint,
@@ -68,7 +66,6 @@ class MemoryAiStreamingChatBubble extends HookWidget {
     required this.initialContent,
     required this.role,
     required this.isError,
-    required this.isToolCalling,
     required this.isToolResultBubble,
     required this.retryLabel,
     required this.streamingContentStream,
@@ -80,7 +77,6 @@ class MemoryAiStreamingChatBubble extends HookWidget {
   final String initialContent;
   final String role;
   final bool isError;
-  final bool isToolCalling;
   final bool isToolResultBubble;
   final String retryLabel;
   final Stream<String> streamingContentStream;
@@ -134,7 +130,6 @@ class MemoryAiStreamingChatBubble extends HookWidget {
       content: content.value,
       role: role,
       isError: isError,
-      isToolCalling: isToolCalling,
       isToolResultBubble: isToolResultBubble,
       retryLabel: retryLabel,
       onRetry: onRetry,
