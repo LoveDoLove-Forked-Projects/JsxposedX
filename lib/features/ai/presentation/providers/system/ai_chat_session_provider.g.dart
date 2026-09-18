@@ -50,7 +50,7 @@ final class AiChatSessionV2Provider
   }
 }
 
-String _$aiChatSessionV2Hash() => r'c9285e27fc8ebe04efc49ebb45562fcbb377f9ad';
+String _$aiChatSessionV2Hash() => r'86e086aaae6e629656c272ae3ff8c2c7d6027906';
 
 final class AiChatSessionV2Family extends $Family
     with

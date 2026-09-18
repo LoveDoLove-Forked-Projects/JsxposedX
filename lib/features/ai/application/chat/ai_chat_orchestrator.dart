@@ -53,8 +53,13 @@ class AiChatOrchestrator {
         prepared,
         cancellation: run._cancellation,
       );
+      run._accumulator.updateTransportTrace(response.trace);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final errorBody = await _readAtMost(response.body, 64 * 1024);
+        final rawError = _rawBodyText(errorBody);
+        run._accumulator.updateTransportTrace(
+          response.trace.copyWith(rawErrorJson: rawError),
+        );
         run._accumulator.add(
           AiStreamEvent.failed(
             requestId: request.requestId,
@@ -62,7 +67,7 @@ class AiChatOrchestrator {
             failure: _httpFailure(
               response.statusCode,
               response.headers,
-              detail: _extractErrorDetail(errorBody),
+              detail: _extractErrorDetail(rawError),
             ),
           ),
         );
@@ -78,6 +83,7 @@ class AiChatOrchestrator {
       await for (final event in events) {
         run._accumulator.add(event);
       }
+      run._accumulator.updateTransportTrace(await response.completedTrace);
     } on AiTransportException catch (error) {
       _addFailure(run, error.failure);
     } on StateError {
@@ -190,10 +196,15 @@ class AiChatOrchestrator {
     }
     return bytes;
   }
-  static String? _extractErrorDetail(List<int> bytes) {
+
+  static String? _rawBodyText(List<int> bytes) {
     if (bytes.isEmpty) return null;
     final text = utf8.decode(bytes, allowMalformed: true).trim();
-    if (text.isEmpty) return null;
+    return text.isEmpty ? null : text;
+  }
+
+  static String? _extractErrorDetail(String? text) {
+    if (text == null || text.isEmpty) return null;
     try {
       final decoded = jsonDecode(text);
       if (decoded is Map) {

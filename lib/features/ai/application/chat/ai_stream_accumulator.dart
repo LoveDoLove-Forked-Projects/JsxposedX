@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:JsxposedX/features/ai/application/chat/ai_stream_snapshot.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_transport_trace.dart';
 import 'package:JsxposedX/features/ai/domain/events/ai_stream_event.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
 
@@ -25,6 +26,7 @@ class AiStreamAccumulator {
   AiStreamStatus _status = AiStreamStatus.idle;
   AiFinishReason? _finishReason;
   AiFailure? _failure;
+  AiTransportTrace? _transportTrace;
   int _sequence = -1;
   bool _dirty = false;
   bool _closed = false;
@@ -104,6 +106,12 @@ class AiStreamAccumulator {
     }
   }
 
+  void updateTransportTrace(AiTransportTrace trace) {
+    if (_closed) return;
+    _transportTrace = trace;
+    _markDirty(immediate: true);
+  }
+
   void flush() {
     if (_closed || !_dirty) return;
     _publishTimer?.cancel();
@@ -120,6 +128,7 @@ class AiStreamAccumulator {
       usage: _usage,
       finishReason: _finishReason,
       failure: _failure,
+      transportTrace: _transportTrace,
     );
     _dirty = false;
     _snapshots.add(_snapshot);

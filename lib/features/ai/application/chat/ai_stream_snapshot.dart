@@ -1,6 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_transport_trace.dart';
 
 part 'ai_stream_snapshot.freezed.dart';
 
@@ -28,5 +29,6 @@ abstract class AiStreamSnapshot with _$AiStreamSnapshot {
     AiUsage? usage,
     AiFinishReason? finishReason,
     AiFailure? failure,
+    AiTransportTrace? transportTrace,
   }) = _AiStreamSnapshot;
 }

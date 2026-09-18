@@ -1,5 +1,6 @@
 import 'package:JsxposedX/features/ai/domain/events/ai_stream_event.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_transport_trace.dart';
 
 abstract interface class AiProtocolAdapter {
   String get id;
@@ -49,15 +50,22 @@ abstract interface class AiTransport {
 }
 
 class AiTransportResponse {
-  const AiTransportResponse({
+  AiTransportResponse({
     required this.statusCode,
     required this.headers,
     required this.body,
-  });
+    AiTransportTrace? trace,
+    Future<AiTransportTrace>? completedTrace,
+  }) : trace = trace ?? _missingTrace,
+       completedTrace = completedTrace ?? Future.value(trace ?? _missingTrace);
 
   final int statusCode;
   final Map<String, List<String>> headers;
   final Stream<List<int>> body;
+  final AiTransportTrace trace;
+  final Future<AiTransportTrace> completedTrace;
+
+  static const _missingTrace = AiTransportTrace(requestUrl: '');
 }
 
 abstract interface class AiCancellationToken {

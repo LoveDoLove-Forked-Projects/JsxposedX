@@ -1,4 +1,5 @@
 import 'package:JsxposedX/features/ai/application/chat/ai_stream_snapshot.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_transport_trace.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_thinking_markup.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_view_message.dart';
@@ -116,16 +117,28 @@ class AiChatViewMessageMapper {
       ..writeln('request_id: ${snapshot.requestId}')
       ..writeln('sequence: ${snapshot.sequence}')
       ..writeln('status: ${snapshot.status.name}');
-    if (snapshot.finishReason != null)
+    if (snapshot.finishReason != null) {
       buffer.writeln('finish_reason: ${snapshot.finishReason!.name}');
-    if (snapshot.usage != null) buffer.writeln('usage: ${snapshot.usage}');
+    }
+    if (snapshot.usage != null) {
+      buffer.writeln('usage: ${snapshot.usage}');
+    }
     for (final call in snapshot.toolCalls) {
       buffer.writeln('tool: ${call.name} (${call.id ?? 'pending'})');
-      if (call.argumentsJson.isNotEmpty)
+      if (call.argumentsJson.isNotEmpty) {
         buffer.writeln('arguments: ${call.argumentsJson}');
+      }
     }
-    if (snapshot.failure != null)
+    if (snapshot.failure != null) {
       buffer.writeln('failure: ${snapshot.failure}');
+    }
+    if (snapshot.transportTrace case final trace?) {
+      buffer
+        ..writeln()
+        ..writeln(_transportTraceDetails(trace));
+    } else {
+      buffer.writeln('transport: server did not provide metadata');
+    }
     return buffer.toString().trim();
   }
 
@@ -143,6 +156,49 @@ class AiChatViewMessageMapper {
     if (message.failure != null) buffer.writeln('failure: ${message.failure}');
     buffer.writeln('transport: metadata unavailable for persisted message');
     return buffer.toString().trim();
+  }
+
+  static String _transportTraceDetails(AiTransportTrace trace) {
+    final buffer = StringBuffer()
+      ..writeln('transport:')
+      ..writeln('  url: ${trace.requestUrl}')
+      ..writeln(
+        '  status: ${trace.statusCode?.toString() ?? 'server did not provide'}',
+      )
+      ..writeln(
+        '  content_type: ${trace.contentType ?? 'server did not provide'}',
+      )
+      ..writeln(
+        '  request_start: ${trace.requestStartTime?.toIso8601String() ?? 'server did not provide'}',
+      )
+      ..writeln(
+        '  request_end: ${trace.requestEndTime?.toIso8601String() ?? 'server did not provide'}',
+      )
+      ..writeln(
+        '  duration_ms: ${trace.responseDuration?.inMilliseconds.toString() ?? 'server did not provide'}',
+      )
+      ..writeln(
+        '  provider_request_id: ${trace.providerRequestId ?? 'server did not provide'}',
+      );
+    if (trace.rawSseEvents.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('raw_sse:')
+        ..writeln(trace.rawSseEvents.join('\n'));
+    } else if (trace.rawResponseText != null &&
+        trace.rawResponseText!.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('raw_response:')
+        ..writeln(trace.rawResponseText!.trim());
+    }
+    if (trace.rawErrorJson != null && trace.rawErrorJson!.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('raw_error:')
+        ..writeln(trace.rawErrorJson!.trim());
+    }
+    return buffer.toString().trimRight();
   }
 
   static String _failureDetail(AiFailure? failure) {
