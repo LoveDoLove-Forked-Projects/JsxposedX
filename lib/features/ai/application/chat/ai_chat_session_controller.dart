@@ -207,6 +207,55 @@ class AiChatSessionController {
     await _regenerateFrom(userMessage);
   }
 
+  /// Removes one persisted message. Conversation structure is never mutated
+  /// while a request is active; callers should provide a confirmation UI.
+  Future<void> deleteMessage(String messageId) async {
+    await initialize();
+    _ensureCanStart();
+    final index = _state.messages.indexWhere(
+      (message) => message.id == messageId,
+    );
+    if (index < 0) return;
+    await _conversationRepository.deleteMessagesById(conversationId, [
+      messageId,
+    ]);
+    final messages = [..._state.messages]..removeAt(index);
+    _emit(_state.copyWith(messages: messages, failure: null));
+  }
+
+  /// Clears an assistant turn without deleting its user parent.
+  Future<void> clearAssistantResponse(String messageId) async {
+    await initialize();
+    _ensureCanStart();
+    final message = _state.messages.firstWhere(
+      (candidate) => candidate.id == messageId,
+      orElse: () => throw StateError('Message $messageId does not exist'),
+    );
+    if (message.role != AiMessageRole.assistant) return;
+    await deleteMessage(messageId);
+  }
+
+  /// Continues a cancelled/interrupted assistant turn by replaying its user
+  /// parent. The existing assistant row is replaced rather than duplicating
+  /// the user message.
+  Future<void> continueGeneration(String messageId) async {
+    await initialize();
+    _ensureCanStart();
+    final index = _state.messages.indexWhere(
+      (message) => message.id == messageId,
+    );
+    if (index < 0) return;
+    final target = _state.messages[index];
+    if (target.role != AiMessageRole.assistant ||
+        (target.status != AiMessageStatus.cancelled &&
+            target.status != AiMessageStatus.interrupted)) {
+      throw StateError('Message is not resumable');
+    }
+    final user = _findUserMessageBefore(index);
+    if (user == null) throw StateError('The response has no user parent');
+    await _regenerateFrom(user);
+  }
+
   Future<void> editUserMessageAndResend({
     required String messageId,
     required String updatedText,

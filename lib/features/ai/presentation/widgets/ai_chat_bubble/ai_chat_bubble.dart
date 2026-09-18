@@ -16,6 +16,8 @@ abstract class BaseAiChatBubble extends StatelessWidget {
   final String? loadingHint;
   final bool streaming;
   final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+  final VoidCallback? onRegenerate;
   final String? rawDetails;
 
   const BaseAiChatBubble({
@@ -30,6 +32,8 @@ abstract class BaseAiChatBubble extends StatelessWidget {
     this.loadingHint,
     this.streaming = false,
     this.onEdit,
+    this.onDelete,
+    this.onRegenerate,
     this.rawDetails,
   });
 
@@ -46,6 +50,8 @@ abstract class BaseAiChatBubble extends StatelessWidget {
       loadingHint: loadingHint,
       streaming: streaming,
       onEdit: onEdit,
+      onDelete: onDelete,
+      onRegenerate: onRegenerate,
       rawDetails: rawDetails,
     );
   }
@@ -93,6 +99,8 @@ class AiChatBubble extends BaseAiChatBubble {
     super.loadingHint,
     super.streaming,
     super.onEdit,
+    super.onDelete,
+    super.onRegenerate,
     super.rawDetails,
   });
 }

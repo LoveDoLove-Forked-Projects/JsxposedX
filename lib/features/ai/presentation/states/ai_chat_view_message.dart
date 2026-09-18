@@ -11,6 +11,7 @@ class AiChatViewMessage {
     this.isError = false,
     this.isToolResultBubble = false,
     this.rawDetails,
+    this.sourceMessageId,
   });
 
   final String id;
@@ -19,4 +20,5 @@ class AiChatViewMessage {
   final bool isError;
   final bool isToolResultBubble;
   final String? rawDetails;
+  final String? sourceMessageId;
 }

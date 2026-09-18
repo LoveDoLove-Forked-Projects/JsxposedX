@@ -1,4 +1,4 @@
-﻿import 'package:JsxposedX/core/extensions/context_extensions.dart';
+import 'package:JsxposedX/core/extensions/context_extensions.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_thinking_markup.dart';
 import 'package:JsxposedX/features/ai/domain/services/ai_multimodal_message_codec.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_compact_scope.dart';
@@ -22,11 +22,7 @@ abstract class BaseBubbleContentPart {
     required BaseBubbleToolbarPart toolbarPart,
   }) {
     if (state.isUser && AiMultimodalMessageCodec.isEncoded(state.content)) {
-      return buildUserAttachments(
-        context,
-        state,
-        toolbarPart: toolbarPart,
-      );
+      return buildUserAttachments(context, state, toolbarPart: toolbarPart);
     }
     if (state.isLoading) {
       return buildLoading(context, state);
@@ -42,10 +38,7 @@ abstract class BaseBubbleContentPart {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
-      children: [
-        markdown,
-        const _StreamingCursor(),
-      ],
+      children: [markdown, const _StreamingCursor()],
     );
   }
 
@@ -137,7 +130,10 @@ abstract class BaseBubbleContentPart {
   }
 
   @protected
-  MarkdownStyleSheet buildMarkdownTheme(BuildContext context, BubbleState state) {
+  MarkdownStyleSheet buildMarkdownTheme(
+    BuildContext context,
+    BubbleState state,
+  ) {
     final isCompact = AiChatCompactScope.of(context);
     final scale = AiChatCompactScope.scaleOf(context);
     return MarkdownStyleSheet.fromTheme(context.theme).copyWith(
@@ -187,6 +183,8 @@ abstract class BaseBubbleContentPart {
         text: markdown,
         onRetry: state.isUser ? null : state.onRetry,
         onEdit: state.isUser ? state.onEdit : null,
+        onDelete: state.onDelete,
+        onRegenerate: state.isUser ? state.onRegenerate : null,
         rawDetails: state.rawDetails,
       ),
       child: MarkdownBody(
@@ -262,7 +260,9 @@ class _ThinkingMarkdownContent extends HookWidget {
         ? Colors.white.withValues(alpha: 0.04)
         : Colors.black.withValues(alpha: 0.035);
     final borderColor = context.colorScheme.primary.withValues(alpha: 0.18);
-    final title = context.isZh ? '思考过程' : 'Thinking';
+    final title = state.streaming
+        ? (context.isZh ? '正在思考…' : 'Thinking…')
+        : (context.isZh ? '思考完成' : 'Thinking complete');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,16 +275,12 @@ class _ThinkingMarkdownContent extends HookWidget {
           ),
           decoration: BoxDecoration(
             color: cardColor,
-            borderRadius: BorderRadius.circular(
-              (isCompact ? 10 : 12) * scale,
-            ),
+            borderRadius: BorderRadius.circular((isCompact ? 10 : 12) * scale),
             border: Border.all(color: borderColor),
           ),
           child: InkWell(
             onTap: () => expanded.value = !expanded.value,
-            borderRadius: BorderRadius.circular(
-              (isCompact ? 10 : 12) * scale,
-            ),
+            borderRadius: BorderRadius.circular((isCompact ? 10 : 12) * scale),
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: (isCompact ? 10 : 12) * scale,
@@ -305,8 +301,7 @@ class _ThinkingMarkdownContent extends HookWidget {
                         child: Text(
                           title,
                           style: TextStyle(
-                            fontSize:
-                                (isCompact ? 11 : 12.5) * scale,
+                            fontSize: (isCompact ? 11 : 12.5) * scale,
                             fontWeight: FontWeight.w600,
                             color: context.colorScheme.primary,
                           ),
@@ -320,9 +315,7 @@ class _ThinkingMarkdownContent extends HookWidget {
                     ],
                   ),
                   if (expanded.value) ...[
-                    SizedBox(
-                      height: (isCompact ? 8 : 10) * scale,
-                    ),
+                    SizedBox(height: (isCompact ? 8 : 10) * scale),
                     GestureDetector(
                       onLongPress: () => toolbarPart.showTextActionsSheet(
                         context,
@@ -330,6 +323,8 @@ class _ThinkingMarkdownContent extends HookWidget {
                         text: thinkingContent,
                         onRetry: state.isUser ? null : state.onRetry,
                         onEdit: null,
+                        onDelete: state.onDelete,
+                        onRegenerate: null,
                         rawDetails: state.rawDetails,
                       ),
                       child: MarkdownBody(
@@ -361,6 +356,8 @@ class _ThinkingMarkdownContent extends HookWidget {
               text: answerContent,
               onRetry: state.isUser ? null : state.onRetry,
               onEdit: null,
+              onDelete: state.onDelete,
+              onRegenerate: null,
               rawDetails: state.rawDetails,
             ),
             child: MarkdownBody(
@@ -378,10 +375,12 @@ class _ThinkingMarkdownContent extends HookWidget {
               fitContent: true,
             ),
           )
-        else if (!state.isError) ...[
+        else if (!state.isError && state.streaming) ...[
           SizedBox(height: 8 * scale),
           DotLoadingIndicator(
-            statusText: context.isZh ? 'AI 正在深度思考...' : 'AI is thinking deeply...',
+            statusText: context.isZh
+                ? 'AI 正在深度思考...'
+                : 'AI is thinking deeply...',
           ),
         ],
       ],
@@ -390,9 +389,7 @@ class _ThinkingMarkdownContent extends HookWidget {
 }
 
 class _UserImageAttachmentCard extends StatelessWidget {
-  const _UserImageAttachmentCard({
-    required this.attachment,
-  });
+  const _UserImageAttachmentCard({required this.attachment});
 
   final AiMultimodalAttachmentData attachment;
 
@@ -412,9 +409,7 @@ class _UserImageAttachmentCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14 * scale),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.18),
-        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
       ),
       child: Stack(
         alignment: Alignment.bottomLeft,
@@ -486,9 +481,7 @@ class _UserImageAttachmentCard extends StatelessWidget {
 }
 
 class _UserFileAttachmentCard extends StatelessWidget {
-  const _UserFileAttachmentCard({
-    required this.attachment,
-  });
+  const _UserFileAttachmentCard({required this.attachment});
 
   final AiMultimodalAttachmentData attachment;
 
@@ -509,9 +502,7 @@ class _UserFileAttachmentCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(14 * scale),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.16),
-        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

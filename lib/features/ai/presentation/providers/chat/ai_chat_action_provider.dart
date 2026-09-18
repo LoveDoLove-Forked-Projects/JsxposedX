@@ -585,6 +585,41 @@ class AiChatAction extends _$AiChatAction {
     }
   }
 
+  Future<void> deleteMessage(String messageId) async {
+    if (state.isStreaming) return;
+    final controller = _readyController();
+    if (controller == null) return;
+    try {
+      await controller.deleteMessage(messageId);
+    } catch (error) {
+      if (!_disposed) {
+        state = state.copyWith(error: '删除消息失败：$error');
+      }
+    }
+  }
+
+  Future<void> clearAssistantResponse(String messageId) async {
+    if (state.isStreaming) return;
+    final controller = _readyController();
+    if (controller == null) return;
+    try {
+      await controller.clearAssistantResponse(messageId);
+    } catch (error) {
+      if (!_disposed) state = state.copyWith(error: '清除回复失败：$error');
+    }
+  }
+
+  Future<void> continueGeneration(String messageId) async {
+    if (state.isStreaming) return;
+    final controller = _readyController();
+    if (controller == null) return;
+    try {
+      await controller.continueGeneration(messageId);
+    } catch (error) {
+      if (!_disposed) state = state.copyWith(error: '继续生成失败：$error');
+    }
+  }
+
   Future<void> retryLastTurn() async {
     if (state.isStreaming || !state.hasUserMessages) return;
     final lastUser = state.standardMessages.lastWhere(

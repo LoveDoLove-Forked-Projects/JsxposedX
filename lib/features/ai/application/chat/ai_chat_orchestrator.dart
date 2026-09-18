@@ -190,7 +190,6 @@ class AiChatOrchestrator {
     }
     return bytes;
   }
-
   static String? _extractErrorDetail(List<int> bytes) {
     if (bytes.isEmpty) return null;
     final text = utf8.decode(bytes, allowMalformed: true).trim();
@@ -288,7 +287,6 @@ class AiChatRun {
   AiStreamSnapshot get currentSnapshot => _accumulator.currentSnapshot;
 
   Future<AiStreamSnapshot> get completed => _completion.future;
-
   bool get isCancelled => _cancellation.isCancelled;
 
   void cancel() => _cancellation.cancel();

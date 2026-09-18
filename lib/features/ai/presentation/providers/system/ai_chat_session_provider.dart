@@ -64,6 +64,15 @@ class AiChatSessionV2 extends _$AiChatSessionV2 {
   Future<void> regenerateLastResponse() =>
       _requireController().regenerateLastResponse();
 
+  Future<void> deleteMessage(String messageId) =>
+      _requireController().deleteMessage(messageId);
+
+  Future<void> clearAssistantResponse(String messageId) =>
+      _requireController().clearAssistantResponse(messageId);
+
+  Future<void> continueGeneration(String messageId) =>
+      _requireController().continueGeneration(messageId);
+
   AiChatSessionController _requireController() {
     final controller = _controller;
     if (controller == null) {

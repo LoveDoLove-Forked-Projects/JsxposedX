@@ -23,6 +23,8 @@ abstract class BaseBubbleToolbarPart {
     required String text,
     VoidCallback? onRetry,
     VoidCallback? onEdit,
+    VoidCallback? onDelete,
+    VoidCallback? onRegenerate,
     String? rawDetails,
   }) async {
     final normalized = text.trim();
@@ -70,6 +72,15 @@ abstract class BaseBubbleToolbarPart {
                 onEdit();
               },
             ),
+          if (onRegenerate != null)
+            _BubbleActionTile(
+              icon: Icons.replay_rounded,
+              title: context.isZh ? '从此处重新生成' : 'Regenerate from here',
+              onTap: () {
+                Navigator.of(context).pop();
+                onRegenerate();
+              },
+            ),
           if (rawDetails != null && rawDetails.trim().isNotEmpty)
             _BubbleActionTile(
               icon: Icons.receipt_long_rounded,
@@ -88,13 +99,18 @@ abstract class BaseBubbleToolbarPart {
             title: context.l10n.aiBubbleSelectText,
             onTap: () {
               Navigator.of(context).pop();
-              showTextSelectionSheet(
-                context,
-                title: title,
-                text: normalized,
-              );
+              showTextSelectionSheet(context, title: title, text: normalized);
             },
           ),
+          if (onDelete != null)
+            _BubbleActionTile(
+              icon: Icons.delete_outline_rounded,
+              title: context.isZh ? '删除消息' : 'Delete message',
+              onTap: () {
+                Navigator.of(context).pop();
+                onDelete();
+              },
+            ),
         ],
       ),
     );
@@ -112,10 +128,7 @@ abstract class BaseBubbleToolbarPart {
       child: SingleChildScrollView(
         child: SelectableText(
           text,
-          style: TextStyle(
-            fontSize: 14 * scale,
-            height: 1.5,
-          ),
+          style: TextStyle(fontSize: 14 * scale, height: 1.5),
         ),
       ),
     );
@@ -178,6 +191,14 @@ class DefaultBubbleToolbarPart extends BaseBubbleToolbarPart {
     required String code,
   }) {
     return [
+      Builder(
+        builder: (context) => IconButton(
+          onPressed: () => handleCopyToClipboard(context, code),
+          tooltip: context.isZh ? '复制代码' : 'Copy code',
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.copy_rounded, size: 18),
+        ),
+      ),
       CodeSaveAction(
         code: code,
         packageName: state.packageName,
@@ -205,10 +226,7 @@ class _BubbleActionTile extends StatelessWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(icon, size: 20 * scale),
-      title: Text(
-        title,
-        style: TextStyle(fontSize: 14 * scale),
-      ),
+      title: Text(title, style: TextStyle(fontSize: 14 * scale)),
       onTap: onTap,
     );
   }

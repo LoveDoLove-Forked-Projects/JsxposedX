@@ -244,6 +244,42 @@ class AiChatList extends HookConsumerWidget {
                                     chatNotifier.editUserMessageAndResend,
                                   )
                                 : null,
+                            onRegenerate:
+                                message.role == 'user' && !chatState.isStreaming
+                                ? () => _confirmMessageAction(
+                                    context,
+                                    title: context.isZh
+                                        ? '从此处重新生成？'
+                                        : 'Regenerate from here?',
+                                    detail: context.isZh
+                                        ? '此消息之后的回复将被移除并重新生成。'
+                                        : 'Messages after this one will be removed and regenerated.',
+                                    confirmLabel: context.isZh
+                                        ? '重新生成'
+                                        : 'Regenerate',
+                                    action: () => chatNotifier.retryByMessageId(
+                                      message.sourceMessageId ?? message.id,
+                                    ),
+                                  )
+                                : null,
+                            onDelete:
+                                !chatState.isStreaming &&
+                                    message.sourceMessageId != null
+                                ? () => _confirmMessageAction(
+                                    context,
+                                    title: context.isZh
+                                        ? '删除这条消息？'
+                                        : 'Delete this message?',
+                                    detail: context.isZh
+                                        ? '此操作无法撤销。'
+                                        : 'This action cannot be undone.',
+                                    confirmLabel: context.l10n.delete,
+                                    destructive: true,
+                                    action: () => chatNotifier.deleteMessage(
+                                      message.sourceMessageId!,
+                                    ),
+                                  )
+                                : null,
                             rawDetails: message.rawDetails,
                           ),
                   );
@@ -280,13 +316,48 @@ class AiChatList extends HookConsumerWidget {
   }
 }
 
+Future<void> _confirmMessageAction(
+  BuildContext context, {
+  required String title,
+  required String detail,
+  required String confirmLabel,
+  required Future<void> Function() action,
+  bool destructive = false,
+}) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(title),
+      content: Text(detail),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: Text(context.l10n.cancel),
+        ),
+        FilledButton(
+          style: destructive
+              ? FilledButton.styleFrom(
+                  backgroundColor: context.colorScheme.error,
+                  foregroundColor: context.colorScheme.onError,
+                )
+              : null,
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: Text(confirmLabel),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) await action();
+}
+
 Future<void> _editAndResendMessage(
   BuildContext context,
   AiChatViewMessage message,
   Future<void> Function({
     required String messageId,
     required String updatedText,
-  }) onSubmit,
+  })
+  onSubmit,
 ) async {
   final controller = TextEditingController(text: message.content);
   final updated = await showDialog<String>(
@@ -315,7 +386,8 @@ Future<void> _editAndResendMessage(
     ),
   );
   controller.dispose();
-  if (updated == null || updated.trim().isEmpty || updated == message.content) return;
+  if (updated == null || updated.trim().isEmpty || updated == message.content)
+    return;
   await onSubmit(messageId: message.id, updatedText: updated.trim());
 }
 

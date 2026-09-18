@@ -12,6 +12,8 @@ class BubbleState {
   final String? loadingHint;
   final bool streaming;
   final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+  final VoidCallback? onRegenerate;
   final String? rawDetails;
 
   const BubbleState({
@@ -25,12 +27,15 @@ class BubbleState {
     this.loadingHint,
     this.streaming = false,
     this.onEdit,
+    this.onDelete,
+    this.onRegenerate,
     this.rawDetails,
   });
 
   bool get isUser => role == 'user';
 
-  bool get isLoading => !isUser && content.isEmpty && !isError && !isToolCalling;
+  bool get isLoading =>
+      !isUser && content.isEmpty && !isError && !isToolCalling;
 
   bool get isToolResult {
     return !isUser && (content.startsWith('✅') || content.startsWith('❌'));

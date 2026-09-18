@@ -175,6 +175,21 @@ void main() {
     await controller.close();
   });
 
+  test('deletes a single message when idle', () async {
+    final controller = _controller(
+      catalog,
+      conversations,
+      _TextTransport(['answer']),
+    );
+    await controller.initialize();
+    await controller.sendText('question');
+    final assistantId = controller.state.messages.last.id;
+    await controller.deleteMessage(assistantId);
+    expect(controller.state.messages, hasLength(1));
+    expect((await conversations.getMessages('conversation')), hasLength(1));
+    await controller.close();
+  });
+
   test('executes reverse tools and returns results to the model', () async {
     final transport = _ScriptedToolTransport();
     const executor = _FakeToolExecutor();
