@@ -1,4 +1,5 @@
 import 'package:JsxposedX/features/ai/application/chat/ai_stream_snapshot.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_transport_trace.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
 import 'package:JsxposedX/features/ai/presentation/mappers/ai_chat_view_message_mapper.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -225,6 +226,39 @@ void main() {
     expect(result.content, contains('partial'));
     expect(result.content, contains('thinking'));
     expect(result.isError, isFalse);
+  });
+
+  test('includes transport trace in active stream raw details', () {
+    final result = mapper.mapStreaming(
+      messageId: 'streaming',
+      snapshot: AiStreamSnapshot(
+        requestId: 'request',
+        text: 'partial',
+        status: AiStreamStatus.streaming,
+        transportTrace: AiTransportTrace(
+          requestUrl: 'https://example.test/v1/chat/completions',
+          statusCode: 200,
+          contentType: 'text/event-stream',
+          requestStartTime: _epoch,
+          requestEndTime: _epoch.add(const Duration(milliseconds: 8)),
+          responseDuration: const Duration(milliseconds: 8),
+          providerRequestId: 'provider-request-1',
+          rawSseEvents: const ['data: {"delta":"partial"}'],
+        ),
+      ),
+    );
+
+    expect(result.rawDetails, contains('transport:'));
+    expect(
+      result.rawDetails,
+      contains('url: https://example.test/v1/chat/completions'),
+    );
+    expect(
+      result.rawDetails,
+      contains('provider_request_id: provider-request-1'),
+    );
+    expect(result.rawDetails, contains('raw_sse:'));
+    expect(result.rawDetails, contains('data: {"delta":"partial"}'));
   });
 }
 

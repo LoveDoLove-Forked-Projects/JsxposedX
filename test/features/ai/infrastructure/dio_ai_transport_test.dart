@@ -37,6 +37,48 @@ void main() {
     await subscription.asFuture<void>();
     expect(received, ['first', 'second']);
   });
+
+  test(
+    'collects completed trace after the response body is consumed',
+    () async {
+      final responseController = StreamController<Uint8List>();
+      final dio = Dio()
+        ..httpClientAdapter = _StreamingAdapter(responseController.stream);
+      final transport = DioAiTransport(dio);
+
+      final response = await transport.send(
+        PreparedAiRequest(
+          uri: Uri.parse('https://example.test/v1/chat/completions'),
+          headers: const {'Accept': 'text/event-stream'},
+          body: const {'stream': true},
+        ),
+        cancellation: AiCancellationController(),
+      );
+      final consumed = response.body.drain<void>();
+
+      responseController.add(
+        Uint8List.fromList(utf8.encode('event: message\ndata: first\n')),
+      );
+      responseController.add(
+        Uint8List.fromList(utf8.encode('data: second\n\n')),
+      );
+      await responseController.close();
+      await consumed;
+
+      final trace = await response.completedTrace;
+      expect(trace.requestUrl, 'https://example.test/v1/chat/completions');
+      expect(trace.statusCode, 200);
+      expect(trace.contentType, 'text/event-stream');
+      expect(trace.rawSseEvents, [
+        'event: message',
+        'data: first',
+        'data: second',
+      ]);
+      expect(trace.rawResponseText, contains('data: second'));
+      expect(trace.requestEndTime, isNotNull);
+      expect(trace.responseDuration, isNotNull);
+    },
+  );
 }
 
 class _StreamingAdapter implements HttpClientAdapter {

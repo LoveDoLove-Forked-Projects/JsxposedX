@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:JsxposedX/features/ai/application/chat/ai_chat_orchestrator.dart';
 import 'package:JsxposedX/features/ai/application/chat/ai_stream_snapshot.dart';
+import 'package:JsxposedX/features/ai/application/chat/ai_transport_trace.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
 import 'package:JsxposedX/features/ai/domain/ports/ai_credential_store.dart';
 import 'package:JsxposedX/features/ai/domain/ports/ai_protocol_adapter.dart';
@@ -60,6 +61,16 @@ void main() {
   test(
     'maps an HTTP authentication failure without parsing it as chat',
     () async {
+      final initialTrace = AiTransportTrace(
+        requestUrl: 'https://example.test/v1/chat/completions',
+        statusCode: 401,
+        requestStartTime: _epoch,
+      );
+      final completedTrace = initialTrace.copyWith(
+        requestEndTime: _epoch.add(const Duration(milliseconds: 12)),
+        responseDuration: const Duration(milliseconds: 12),
+        rawResponseText: '{"error":{"message":"bad key"}}',
+      );
       final orchestrator = _orchestrator(
         transport: _FakeTransport(
           response: AiTransportResponse(
@@ -68,6 +79,8 @@ void main() {
               'X-Request-ID': ['provider-request-1'],
             },
             body: Stream.value(utf8.encode('{"error":{"message":"bad key"}}')),
+            trace: initialTrace,
+            completedTrace: Future.value(completedTrace),
           ),
         ),
         credentialStore: const _FakeCredentialStore({'credential-1': 'secret'}),
@@ -80,6 +93,18 @@ void main() {
       expect(result.failure?.httpStatus, 401);
       expect(result.failure?.providerRequestId, 'provider-request-1');
       expect(result.failure?.messageKey, 'bad key');
+      expect(
+        result.transportTrace?.rawResponseText,
+        completedTrace.rawResponseText,
+      );
+      expect(
+        result.transportTrace?.rawErrorJson,
+        completedTrace.rawResponseText,
+      );
+      expect(
+        result.transportTrace?.requestEndTime,
+        completedTrace.requestEndTime,
+      );
     },
   );
 

@@ -57,8 +57,9 @@ class AiChatOrchestrator {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final errorBody = await _readAtMost(response.body, 64 * 1024);
         final rawError = _rawBodyText(errorBody);
+        final completedTrace = await response.completedTrace;
         run._accumulator.updateTransportTrace(
-          response.trace.copyWith(rawErrorJson: rawError),
+          completedTrace.copyWith(rawErrorJson: rawError),
         );
         run._accumulator.add(
           AiStreamEvent.failed(
