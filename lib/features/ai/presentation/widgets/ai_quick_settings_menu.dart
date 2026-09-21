@@ -1,6 +1,7 @@
 import 'package:JsxposedX/common/pages/toast.dart';
 import 'package:JsxposedX/core/extensions/context_extensions.dart';
 import 'package:JsxposedX/core/models/ai_config.dart';
+import 'package:JsxposedX/core/providers/theme_provider.dart';
 import 'package:JsxposedX/features/ai/domain/constants/builtin_ai_config.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_tool_definition.dart';
@@ -24,10 +25,16 @@ class AiQuickSettingsMenu extends HookConsumerWidget {
 
   /// 显示快捷设置底部弹窗
   static Future<void> show(BuildContext context, {String? packageName}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final backgroundColor = isDark
+        ? Theme.of(context).colorScheme.surfaceContainerHigh
+        : Theme.of(context).colorScheme.surface;
+    
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: backgroundColor,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
       ),
@@ -130,6 +137,7 @@ class _MenuContent extends HookConsumerWidget {
     final currentModelId = config.moduleName.trim();
     final currentApprovalMode =
         assistant?.toolPolicy.approvalMode ?? AiToolApprovalMode.riskyOnly;
+    final isDark = ref.watch(isDarkModeProvider);
 
     // Load available models
     final modelsAsync = ref.watch(aiModelsProvider);
@@ -238,6 +246,7 @@ class _MenuContent extends HookConsumerWidget {
                       iconColor: Colors.orange,
                       label: isZh ? '无法加载模型列表' : 'Cannot load models',
                       detail: error.toString(),
+                      isDark: isDark,
                     ),
                     SizedBox(height: 8.h),
                     Align(
@@ -268,20 +277,23 @@ class _MenuContent extends HookConsumerWidget {
                       icon: Icons.info_outline,
                       iconColor: context.theme.hintColor,
                       label: isZh ? '暂无可用模型' : 'No models available',
+                      isDark: isDark,
                     );
                   }
 
                   return Container(
                     decoration: BoxDecoration(
-                      color: context.isDark
+                      color: isDark
                           ? Colors.white.withValues(alpha: 0.04)
                           : Colors.grey[100],
                       borderRadius: BorderRadius.circular(12.r),
                     ),
-                    child: Column(
-                      children: models.asMap().entries.map((entry) {
-                        final index = entry.key;
-                        final model = entry.value;
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: models.length,
+                      itemBuilder: (context, index) {
+                        final model = models[index];
                         final isSelected = model.id == selectedModelId.value;
                         final isFirst = index == 0;
                         final isLast = index == models.length - 1;
@@ -292,42 +304,48 @@ class _MenuContent extends HookConsumerWidget {
                           isFirst: isFirst,
                           isLast: isLast,
                           isSaving: isSaving.value && isSelected,
-                          onTap: () async {
+                          onTap: () {
                             if (isSelected || isSaving.value) return;
+                            // 立即更新UI，提供即时反馈
                             selectedModelId.value = model.id;
                             isSaving.value = true;
-                            try {
-                              final updatedConfig = config.copyWith(
-                                moduleName: model.id,
-                              );
-                              await ref
-                                  .read(aiConfigActionProvider.notifier)
-                                  .updateConfig(updatedConfig);
-                              if (!context.mounted) return;
-                              ref.invalidate(aiChatRuntimeStatusProvider);
-                              if (context.mounted) {
-                                ToastMessage.show(
-                                  isZh ? '模型已切换' : 'Model switched',
+                            
+                            // 异步执行保存操作，不阻塞主线程
+                            Future.microtask(() async {
+                              try {
+                                final updatedConfig = config.copyWith(
+                                  moduleName: model.id,
                                 );
+                                await ref
+                                    .read(aiConfigActionProvider.notifier)
+                                    .updateConfig(updatedConfig);
+                                if (!context.mounted) return;
+                                ref.invalidate(aiChatRuntimeStatusProvider);
+                                if (context.mounted) {
+                                  ToastMessage.show(
+                                    isZh ? '模型已切换' : 'Model switched',
+                                  );
+                                }
+                              } catch (e) {
+                                if (!context.mounted) return;
+                                // 回滚UI状态
+                                selectedModelId.value = currentModelId;
+                                if (context.mounted) {
+                                  ToastMessage.show(
+                                    isZh
+                                        ? '切换失败: $e'
+                                        : 'Switch failed: $e',
+                                  );
+                                }
+                              } finally {
+                                if (context.mounted) {
+                                  isSaving.value = false;
+                                }
                               }
-                            } catch (e) {
-                              if (!context.mounted) return;
-                              selectedModelId.value = currentModelId;
-                              if (context.mounted) {
-                                ToastMessage.show(
-                                  isZh
-                                      ? '切换失败: $e'
-                                      : 'Switch failed: $e',
-                                );
-                              }
-                            } finally {
-                              if (context.mounted) {
-                                isSaving.value = false;
-                              }
-                            }
+                            });
                           },
                         );
-                      }).toList(),
+                      },
                     ),
                   );
                 },
@@ -357,7 +375,7 @@ class _MenuContent extends HookConsumerWidget {
               Container(
                 padding: EdgeInsets.all(4.w),
                 decoration: BoxDecoration(
-                  color: context.isDark
+                  color: isDark
                       ? Colors.white.withValues(alpha: 0.06)
                       : Colors.grey[200],
                   borderRadius: BorderRadius.circular(12.r),
@@ -368,59 +386,65 @@ class _MenuContent extends HookConsumerWidget {
                     final label = _approvalModeShortLabel(context, mode);
                     return Expanded(
                       child: GestureDetector(
-                        onTap: () async {
+                        onTap: () {
                           if (isSelected || isSaving.value) return;
+                          // 立即更新UI，提供即时反馈
                           selectedApprovalMode.value = mode;
                           isSaving.value = true;
-                          try {
-                            await ref
-                                .read(aiConfigActionProvider.notifier)
-                                .saveAssistantSettings(
-                                  configId: config.id,
-                                  systemPrompt: assistant?.systemPrompt,
-                                  contextMode:
-                                      assistant?.contextPolicy.mode ??
-                                      AiContextMode.tokenBudget,
-                                  recentMessageLimit: assistant
-                                      ?.contextPolicy
-                                      .recentMessageLimit,
-                                  approvalMode: mode,
-                                  maxToolRounds:
-                                      assistant?.toolPolicy.maxRounds ?? 8,
+                          
+                          // 异步执行保存操作，不阻塞主线程
+                          Future.microtask(() async {
+                            try {
+                              await ref
+                                  .read(aiConfigActionProvider.notifier)
+                                  .saveAssistantSettings(
+                                    configId: config.id,
+                                    systemPrompt: assistant?.systemPrompt,
+                                    contextMode:
+                                        assistant?.contextPolicy.mode ??
+                                        AiContextMode.tokenBudget,
+                                    recentMessageLimit: assistant
+                                        ?.contextPolicy
+                                        .recentMessageLimit,
+                                    approvalMode: mode,
+                                    maxToolRounds:
+                                        assistant?.toolPolicy.maxRounds ?? 8,
+                                  );
+                              if (context.mounted) {
+                                ref.invalidate(aiAssistantsV2Provider);
+                                ToastMessage.show(
+                                  isZh ? '审批模式已更新' : 'Approval mode updated',
                                 );
-                            if (context.mounted) {
-                              ref.invalidate(aiAssistantsV2Provider);
-                              ToastMessage.show(
-                                isZh ? '审批模式已更新' : 'Approval mode updated',
-                              );
+                              }
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              // 回滚UI状态
+                              selectedApprovalMode.value = currentApprovalMode;
+                              if (context.mounted) {
+                                ToastMessage.show(
+                                  isZh
+                                      ? '更新失败: $e'
+                                      : 'Update failed: $e',
+                                );
+                              }
+                            } finally {
+                              if (context.mounted) {
+                                isSaving.value = false;
+                              }
                             }
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            selectedApprovalMode.value = currentApprovalMode;
-                            if (context.mounted) {
-                              ToastMessage.show(
-                                isZh
-                                    ? '更新失败: $e'
-                                    : 'Update failed: $e',
-                              );
-                            }
-                          } finally {
-                            if (context.mounted) {
-                              isSaving.value = false;
-                            }
-                          }
+                          });
                         },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           padding: EdgeInsets.symmetric(vertical: 10.h),
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? (context.isDark
+                                ? (isDark
                                       ? context.colorScheme.primary
                                       : Colors.white)
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(10.r),
-                            boxShadow: isSelected && !context.isDark
+                            boxShadow: isSelected && !isDark
                                 ? [
                                     BoxShadow(
                                       color: Colors.black.withValues(
@@ -439,7 +463,7 @@ class _MenuContent extends HookConsumerWidget {
                               fontSize: 12.sp,
                               fontWeight: FontWeight.w600,
                               color: isSelected
-                                  ? (context.isDark
+                                  ? (isDark
                                         ? Colors.white
                                         : context.colorScheme.primary)
                                   : context.theme.hintColor,
@@ -488,6 +512,7 @@ class _MenuContent extends HookConsumerWidget {
                   detail: isZh
                       ? '工具列表将在进入聊天后加载'
                       : 'Tool list will load after entering chat',
+                  isDark: isDark,
                 )
               else
                 _ToolList(
@@ -606,16 +631,17 @@ class _MenuContent extends HookConsumerWidget {
     required Color iconColor,
     required String label,
     String? detail,
+    required bool isDark,
   }) {
     return Container(
       padding: EdgeInsets.all(12.w),
       decoration: BoxDecoration(
-        color: context.isDark
+        color: isDark
             ? Colors.white.withValues(alpha: 0.03)
             : Colors.grey[50],
         borderRadius: BorderRadius.circular(10.r),
         border: Border.all(
-          color: context.isDark
+          color: isDark
               ? Colors.white.withValues(alpha: 0.06)
               : Colors.grey[300]!,
         ),
@@ -690,7 +716,7 @@ class _ModelListItem extends StatelessWidget {
           border: !isLast
               ? Border(
                   bottom: BorderSide(
-                    color: context.isDark
+                    color: Theme.of(context).brightness == Brightness.dark
                         ? Colors.white.withValues(alpha: 0.06)
                         : Colors.grey[300]!,
                     width: 0.5,
@@ -808,8 +834,9 @@ class _ToolList extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isZh = context.isZh;
+    final isDark = ref.watch(isDarkModeProvider);
 
-    // 菜单打开时从持久化存储加载数据（isAutoDispose=true 会在关闭时清除内存）
+    // 菜单打开时从持久化存储加载数据
     useEffect(() {
       Future.microtask(() async {
         await ref
@@ -827,127 +854,160 @@ class _ToolList extends HookConsumerWidget {
     final userRisky =
         ref.watch(userRiskyToolsStoreProvider)[configId] ?? <String, bool>{};
 
-    final grouped = <AiToolCategory, List<AiToolDefinition>>{};
-    for (final tool in toolDefinitions) {
-      final cat = AiToolRegistry.categoryOf(tool.name) ?? AiToolCategory.reverse;
-      grouped.putIfAbsent(cat, () => []).add(tool);
-    }
+    // 使用 useMemoized 缓存分组计算，避免每次重建都重新计算
+    final grouped = useMemoized(() {
+      final result = <AiToolCategory, List<AiToolDefinition>>{};
+      for (final tool in toolDefinitions) {
+        final cat = AiToolRegistry.categoryOf(tool.name) ?? AiToolCategory.reverse;
+        result.putIfAbsent(cat, () => []).add(tool);
+      }
+      return result;
+    }, [toolDefinitions]);
 
-    final categoryLabels = <AiToolCategory, String>{
+    final categoryLabels = useMemoized(() => <AiToolCategory, String>{
       AiToolCategory.reverse: isZh ? 'APK 逆向分析' : 'APK Reverse',
       AiToolCategory.scriptLifecycle: isZh ? '脚本生命周期' : 'Script Lifecycle',
       AiToolCategory.contentProduction: isZh ? '内容生产' : 'Content Production',
       AiToolCategory.dataAnalysis: isZh ? '数据分析' : 'Data Analysis',
       AiToolCategory.systemControl: isZh ? '系统管控' : 'System Control',
       AiToolCategory.multimodal: isZh ? '多模态' : 'Multimodal',
-    };
+    }, [isZh]);
 
-    final entries = grouped.entries.toList();
-    final widgets = <Widget>[];
-    for (var gi = 0; gi < entries.length; gi++) {
-      final group = entries[gi];
-      final cat = group.key;
-      final toolsInCat = group.value;
-      final isLastGroup = gi == entries.length - 1;
-
-      widgets.add(
-        Padding(
-          padding: EdgeInsets.only(
-            left: 12.w,
-            right: 12.w,
-            top: 8.h,
-            bottom: 4.h,
-          ),
-          child: Text(
-            categoryLabels[cat] ?? cat.name,
-            style: TextStyle(
-              fontSize: 12.sp,
-              fontWeight: FontWeight.w600,
-              color: context.isDark
-                  ? Colors.white.withValues(alpha: 0.7)
-                  : Colors.grey[700],
-            ),
-          ),
-        ),
-      );
-
-      for (var ti = 0; ti < toolsInCat.length; ti++) {
-        final tool = toolsInCat[ti];
-        final isLast = isLastGroup && ti == toolsInCat.length - 1;
-        final isEnabled = !disabledTools.contains(tool.name);
-        final isRisky = userRisky[tool.name] ?? (tool.isRisky == true);
-
-        widgets.add(
-          _ToolListItem(
-            tool: tool,
-            isEnabled: isEnabled,
-            isRisky: isRisky,
-            isLast: isLast,
-            onToggleEnabled: () async {
-              if (isSaving.value) return;
-              isSaving.value = true;
-              try {
-                await ref
-                    .read(disabledToolsStoreProvider.notifier)
-                    .toggleTool(configId, tool.name);
-                if (context.mounted) {
-                  ToastMessage.show(
-                    isZh
-                        ? '${tool.name} ${isEnabled ? "已禁用" : "已启用"}'
-                        : '${tool.name} ${isEnabled ? "disabled" : "enabled"}',
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ToastMessage.show(
-                    isZh ? '操作失败: $e' : 'Failed: $e',
-                  );
-                }
-              } finally {
-                if (context.mounted) {
-                  isSaving.value = false;
-                }
-              }
-            },
-            onToggleRisky: () async {
-              if (isSaving.value) return;
-              isSaving.value = true;
-              try {
-                await ref
-                    .read(userRiskyToolsStoreProvider.notifier)
-                    .setRisky(configId, tool.name, !isRisky);
-                if (context.mounted) {
-                  ToastMessage.show(
-                    isZh
-                        ? '${tool.name} ${isRisky ? "标记为安全" : "标记为危险"}'
-                        : '${tool.name} ${isRisky ? "marked safe" : "marked risky"}',
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ToastMessage.show(
-                    isZh ? '操作失败: $e' : 'Failed: $e',
-                  );
-                }
-              } finally {
-                if (context.mounted) {
-                  isSaving.value = false;
-                }
-              }
-            },
-          ),
-        );
+    final entries = useMemoized(() => grouped.entries.toList(), [grouped]);
+    
+    // 计算总项目数：每个分类标题 + 该分类下的所有工具
+    final totalItemCount = useMemoized(() {
+      int count = 0;
+      for (final group in entries) {
+        count += 1 + group.value.length; // 分类标题 + 工具项
       }
-    }
+      return count;
+    }, [entries]);
 
     return Container(
       decoration: BoxDecoration(
-        color: context.isDark
+        color: isDark
             ? Colors.white.withValues(alpha: 0.04)
             : Colors.grey[100],
         borderRadius: BorderRadius.circular(12.r),
       ),
-      child: Column(children: widgets),
+      child: ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: totalItemCount,
+        itemBuilder: (context, index) {
+          // 找到当前索引对应的分类和工具
+          int currentIndex = 0;
+          for (var gi = 0; gi < entries.length; gi++) {
+            final group = entries[gi];
+            final cat = group.key;
+            final toolsInCat = group.value;
+            final isLastGroup = gi == entries.length - 1;
+            
+            // 检查是否是分类标题
+            if (index == currentIndex) {
+              return Padding(
+                padding: EdgeInsets.only(
+                  left: 12.w,
+                  right: 12.w,
+                  top: 8.h,
+                  bottom: 4.h,
+                ),
+                child: Text(
+                  categoryLabels[cat] ?? cat.name,
+                  style: TextStyle(
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w600,
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.7)
+                        : Colors.grey[700],
+                  ),
+                ),
+              );
+            }
+            currentIndex++;
+            
+            // 检查是否是工具项
+            for (var ti = 0; ti < toolsInCat.length; ti++) {
+              if (index == currentIndex) {
+                final tool = toolsInCat[ti];
+                final isLast = isLastGroup && ti == toolsInCat.length - 1;
+                final isEnabled = !disabledTools.contains(tool.name);
+                final isRisky = userRisky[tool.name] ?? (tool.isRisky == true);
+                
+                return _ToolListItem(
+                  tool: tool,
+                  isEnabled: isEnabled,
+                  isRisky: isRisky,
+                  isLast: isLast,
+                  onToggleEnabled: () {
+                    if (isSaving.value) return;
+                    isSaving.value = true;
+                    
+                    Future.microtask(() async {
+                      try {
+                        await ref
+                            .read(disabledToolsStoreProvider.notifier)
+                            .toggleTool(configId, tool.name);
+                        if (context.mounted) {
+                          ToastMessage.show(
+                            isZh
+                                ? '${tool.name} ${isEnabled ? "已禁用" : "已启用"}'
+                                : '${tool.name} ${isEnabled ? "disabled" : "enabled"}',
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ToastMessage.show(
+                            isZh ? '操作失败: $e' : 'Failed: $e',
+                          );
+                        }
+                      } finally {
+                        if (context.mounted) {
+                          isSaving.value = false;
+                        }
+                      }
+                    });
+                  },
+                  onToggleRisky: () {
+                    if (isSaving.value) return;
+                    isSaving.value = true;
+                    
+                    Future.microtask(() async {
+                      try {
+                        await ref
+                            .read(userRiskyToolsStoreProvider.notifier)
+                            .setRisky(configId, tool.name, !isRisky);
+                        if (context.mounted) {
+                          ToastMessage.show(
+                            isZh
+                                ? '${tool.name} ${isRisky ? "标记为安全" : "标记为危险"}'
+                                : '${tool.name} ${isRisky ? "marked safe" : "marked risky"}',
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ToastMessage.show(
+                            isZh ? '操作失败: $e' : 'Failed: $e',
+                          );
+                        }
+                      } finally {
+                        if (context.mounted) {
+                          isSaving.value = false;
+                        }
+                      }
+                    });
+                  },
+                );
+              }
+              currentIndex++;
+            }
+          }
+          
+          // 不应该到达这里
+          return const SizedBox.shrink();
+        },
+      ),
     );
   }
 }
@@ -979,7 +1039,7 @@ class _ToolListItem extends HookWidget {
         border: !isLast
             ? Border(
                 bottom: BorderSide(
-                  color: context.isDark
+                  color: Theme.of(context).brightness == Brightness.dark
                       ? Colors.white.withValues(alpha: 0.06)
                       : Colors.grey[300]!,
                   width: 0.5,
@@ -1151,12 +1211,12 @@ class _SettingsSectionState extends State<_SettingsSection>
     return Container(
       margin: EdgeInsets.only(bottom: 8.h),
       decoration: BoxDecoration(
-        color: context.isDark
+        color: Theme.of(context).brightness == Brightness.dark
             ? context.colorScheme.surfaceContainerLow
             : Colors.white,
         borderRadius: BorderRadius.circular(14.r),
         border: Border.all(
-          color: context.isDark
+          color: Theme.of(context).brightness == Brightness.dark
               ? Colors.white.withValues(alpha: 0.06)
               : context.colorScheme.outlineVariant,
         ),

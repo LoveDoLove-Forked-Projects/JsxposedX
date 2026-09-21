@@ -7,13 +7,15 @@ import 'package:JsxposedX/features/ai/presentation/providers/environments/apk_re
 import 'package:JsxposedX/features/ai/presentation/providers/runtime/ai_chat_runtime_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/runtime/ai_chat_environment_initializer.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_runtime_state.dart';
+import 'package:JsxposedX/features/ai/presentation/states/ai_chat_session_view.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_input.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_list.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_conversation_drawer.dart';
-import 'package:JsxposedX/features/ai/presentation/widgets/ai_reverse_header.dart';
+
 import 'package:JsxposedX/features/apk_analysis/presentation/pages/apk_analysis_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -30,6 +32,9 @@ class AiReversePage extends HookConsumerWidget {
     final chatState = ref.watch(
       aiChatRuntimeProvider(packageName: packageName),
     );
+    final sessions = ref
+        .read(aiChatRuntimeProvider(packageName: packageName).notifier)
+        .getSessions();
     final isZh = context.isZh;
     final environment = ref.watch(
       apkReverseChatEnvironmentProvider(
@@ -103,6 +108,40 @@ class AiReversePage extends HookConsumerWidget {
         }
       },
       child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: context.isDark
+              ? context.colorScheme.surfaceContainerHigh
+              : context.colorScheme.surface,
+          elevation: 4,
+          shadowColor: Colors.black.withOpacity(0.05),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.only(
+              bottomLeft: Radius.circular(24.r),
+              bottomRight: Radius.circular(24.r),
+            ),
+          ),
+          leading: _ChatDrawerButton(
+            sessionCount: sessions.length,
+            onTap: () => scaffoldKey.currentState?.openDrawer(),
+          ),
+          title: Text(
+            chatState.currentSessionId != null && sessions.isNotEmpty
+                ? sessions
+                      .firstWhere(
+                        (session) => session.id == chatState.currentSessionId,
+                        orElse: () => sessions.first,
+                      )
+                      .name
+                : context.l10n.aiNewSession,
+            style: TextStyle(
+              fontSize: 16.sp,
+              fontWeight: FontWeight.bold,
+              color: context.textTheme.titleLarge?.color,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
         key: scaffoldKey,
         drawer: AiConversationDrawer(
           packageName: packageName,
@@ -112,11 +151,6 @@ class AiReversePage extends HookConsumerWidget {
         body: SafeArea(
           child: Column(
             children: [
-              AiReverseHeader(
-                packageName: packageName,
-                onSessionDrawerTap: () =>
-                    scaffoldKey.currentState?.openDrawer(),
-              ),
               _ReverseInitBanner(
                 chatState: chatState,
                 onRetry: initializeReverseSession,
@@ -215,6 +249,68 @@ class _ReverseInitBanner extends StatelessWidget {
               child: Text(
                 context.l10n.retry,
                 style: TextStyle(color: foregroundColor),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+
+
+/// 对话列表入口图标（位于 app icon 左边）
+class _ChatDrawerButton extends StatelessWidget {
+  const _ChatDrawerButton({required this.sessionCount, this.onTap});
+
+  final int sessionCount;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 44.w,
+      height: 44.w,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          IconButton(
+            tooltip: context.isZh ? '对话列表' : 'Conversations',
+            onPressed: onTap,
+            padding: EdgeInsets.zero,
+            icon: Icon(
+              Icons.menu_rounded,
+              size: 25.sp,
+              color: context.colorScheme.primary,
+            ),
+          ),
+          if (sessionCount > 0)
+            Positioned(
+              top: 2.w,
+              right: 1.w,
+              child: IgnorePointer(
+                child: Container(
+                  constraints: BoxConstraints(minWidth: 16.w, minHeight: 16.w),
+                  padding: EdgeInsets.symmetric(horizontal: 4.w),
+                  decoration: BoxDecoration(
+                    color: context.colorScheme.primary,
+                    borderRadius: BorderRadius.circular(999.r),
+                    border: Border.all(
+                      color: context.theme.scaffoldBackgroundColor,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Text(
+                    sessionCount > 99 ? '99+' : '$sessionCount',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: context.colorScheme.onPrimary,
+                      fontSize: 9.sp,
+                      fontWeight: FontWeight.bold,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
               ),
             ),
         ],

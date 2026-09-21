@@ -184,37 +184,6 @@ class AiConversationDrawer extends HookConsumerWidget {
                           }
                         },
                       ),
-                      SizedBox(width: 6.w),
-                      _DrawerActionButton(
-                        icon: Icons.delete_forever_rounded,
-                        tooltip: context.l10n.aiDeleteHistory,
-                        color: Colors.redAccent,
-                        onTap: () async {
-                          Navigator.pop(context);
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: Text(context.l10n.aiDeleteConfirmTitle),
-                              content: Text(
-                                context.l10n.aiDeleteConfirmContent,
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx, false),
-                                  child: Text(context.l10n.cancel),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx, true),
-                                  child: Text(context.l10n.confirm),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (confirm == true) {
-                            await chatNotifier.deleteHistory();
-                          }
-                        },
-                      ),
                     ],
                   ),
                 ],
@@ -247,80 +216,126 @@ class AiConversationDrawer extends HookConsumerWidget {
                         ),
                       ),
                     )
-                  : ListView.separated(
+                  : ListView.builder(
                       padding: EdgeInsets.fromLTRB(12.w, 14.h, 12.w, 20.h),
                       itemCount: sessions.length,
-                      separatorBuilder: (_, __) => SizedBox(height: 6.h),
                       itemBuilder: (context, index) {
                         final session = sessions[index];
                         final isActive = session.id == currentId;
-                        return InkWell(
-                          onTap: () {
-                            Navigator.pop(context);
-                            onSessionSelected(session.id);
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 14.w,
-                              vertical: 13.h,
-                            ),
+                        
+                        // 预计算一些值，减少重复访问 context
+                        final primaryColor = context.colorScheme.primary;
+                        final hintColor = context.theme.hintColor;
+                        final onSurfaceVariant = context.colorScheme.onSurfaceVariant;
+                        
+                        return Dismissible(
+                          key: ValueKey(session.id),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
                             decoration: BoxDecoration(
-                              color: isActive
-                                  ? context.colorScheme.primary.withValues(
-                                      alpha: 0.1,
-                                    )
-                                  : chatSurface,
+                              color: Colors.red,
                               borderRadius: BorderRadius.circular(12.r),
                             ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  isActive
-                                      ? Icons.chat_bubble_rounded
-                                      : Icons.chat_bubble_outline_rounded,
-                                  size: 18.sp,
-                                  color: isActive
-                                      ? context.colorScheme.primary
-                                      : context.theme.hintColor,
+                            alignment: Alignment.centerRight,
+                            padding: EdgeInsets.symmetric(horizontal: 20.w),
+                            child: Icon(
+                              Icons.delete_forever_rounded,
+                              color: Colors.white,
+                              size: 24.sp,
+                            ),
+                          ),
+                          confirmDismiss: (direction) async {
+                            final isZh = context.isZh;
+                            return await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: Text(isZh ? '删除对话' : 'Delete Conversation'),
+                                content: Text(
+                                  isZh 
+                                    ? '确定要删除对话 "${session.name}" 吗？此操作不可撤销。'
+                                    : 'Are you sure you want to delete conversation "${session.name}"? This action cannot be undone.',
                                 ),
-                                SizedBox(width: 12.w),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        session.name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 14.sp,
-                                          fontWeight: isActive
-                                              ? FontWeight.w600
-                                              : FontWeight.normal,
-                                          color: isActive
-                                              ? context.colorScheme.primary
-                                              : null,
-                                        ),
-                                      ),
-                                      SizedBox(height: 2.h),
-                                      Text(
-                                        _formatTime(session.updatedAt, isZh),
-                                        style: TextStyle(
-                                          fontSize: 11.sp,
-                                          color: isActive
-                                              ? context.colorScheme.primary
-                                                    .withValues(alpha: 0.72)
-                                              : context
-                                                    .colorScheme
-                                                    .onSurfaceVariant,
-                                        ),
-                                      ),
-                                    ],
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: Text(context.l10n.cancel),
                                   ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: Text(context.l10n.confirm),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                          onDismissed: (direction) async {
+                            await chatNotifier.deleteSession(session.id);
+                          },
+                          child: Padding(
+                            padding: EdgeInsets.only(bottom: 6.h),
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.pop(context);
+                                onSessionSelected(session.id);
+                              },
+                              child: Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 14.w,
+                                  vertical: 13.h,
                                 ),
-                              ],
+                                decoration: BoxDecoration(
+                                  color: isActive
+                                      ? primaryColor.withValues(alpha: 0.1)
+                                      : chatSurface,
+                                  borderRadius: BorderRadius.circular(12.r),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      isActive
+                                          ? Icons.chat_bubble_rounded
+                                          : Icons.chat_bubble_outline_rounded,
+                                      size: 18.sp,
+                                      color: isActive
+                                          ? primaryColor
+                                          : hintColor,
+                                    ),
+                                    SizedBox(width: 12.w),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            session.name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 14.sp,
+                                              fontWeight: isActive
+                                                  ? FontWeight.w600
+                                                  : FontWeight.normal,
+                                              color: isActive
+                                                  ? primaryColor
+                                                  : null,
+                                            ),
+                                          ),
+                                          SizedBox(height: 2.h),
+                                          Text(
+                                            _formatTime(session.updatedAt, context.isZh),
+                                            style: TextStyle(
+                                              fontSize: 11.sp,
+                                              color: isActive
+                                                  ? primaryColor.withValues(alpha: 0.72)
+                                                  : onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
                         );
