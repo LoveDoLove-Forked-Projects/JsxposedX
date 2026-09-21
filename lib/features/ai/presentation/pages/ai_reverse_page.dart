@@ -9,6 +9,7 @@ import 'package:JsxposedX/features/ai/presentation/runtime/ai_chat_environment_i
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_runtime_state.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_input.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_chat_list.dart';
+import 'package:JsxposedX/features/ai/presentation/widgets/ai_conversation_drawer.dart';
 import 'package:JsxposedX/features/ai/presentation/widgets/ai_reverse_header.dart';
 import 'package:JsxposedX/features/apk_analysis/presentation/pages/apk_analysis_page.dart';
 import 'package:flutter/material.dart';
@@ -39,6 +40,7 @@ class AiReversePage extends HookConsumerWidget {
     final pageController = usePageController();
     final sessionId = useState<String>('');
     final currentPage = useState(0);
+    final scaffoldKey = useMemoized(() => GlobalKey<ScaffoldState>());
 
     Future<void> initializeReverseSession() async {
       sessionId.value = '';
@@ -101,11 +103,20 @@ class AiReversePage extends HookConsumerWidget {
         }
       },
       child: Scaffold(
+        key: scaffoldKey,
+        drawer: AiConversationDrawer(
+          packageName: packageName,
+          onSessionSelected: (id) => chatNotifier.switchSession(id),
+        ),
         resizeToAvoidBottomInset: true,
         body: SafeArea(
           child: Column(
             children: [
-              AiReverseHeader(packageName: packageName),
+              AiReverseHeader(
+                packageName: packageName,
+                onSessionDrawerTap: () =>
+                    scaffoldKey.currentState?.openDrawer(),
+              ),
               _ReverseInitBanner(
                 chatState: chatState,
                 onRetry: initializeReverseSession,
@@ -119,6 +130,14 @@ class AiReversePage extends HookConsumerWidget {
                       messages: chatState.visibleViewMessages,
                       scrollController: scrollController,
                       packageName: packageName,
+                      customTitle: chatState.currentSessionId == null
+                          ? (isZh ? '请选择一个对话' : 'Choose a conversation')
+                          : null,
+                      customSubtitle: chatState.currentSessionId == null
+                          ? (isZh
+                                ? '点击左上角的对话图标打开聊天列表'
+                                : 'Tap the conversation icon to open your chats')
+                          : null,
                     ),
                     ApkAnalysisPage(
                       packageName: packageName,

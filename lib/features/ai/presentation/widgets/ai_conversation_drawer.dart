@@ -1,0 +1,382 @@
+import 'package:JsxposedX/common/widgets/custom_dIalog.dart';
+import 'package:JsxposedX/core/extensions/context_extensions.dart';
+import 'package:JsxposedX/features/ai/presentation/providers/config/ai_config_query_provider.dart';
+import 'package:JsxposedX/features/ai/presentation/providers/runtime/ai_chat_runtime_provider.dart';
+import 'package:JsxposedX/features/ai/presentation/states/ai_chat_session_view.dart';
+import 'package:JsxposedX/features/ai/presentation/widgets/ai_quick_settings_menu.dart';
+import 'package:JsxposedX/features/app/presentation/providers/app_query_provider.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:intl/intl.dart';
+
+class AiConversationDrawer extends HookConsumerWidget {
+  const AiConversationDrawer({
+    super.key,
+    required this.packageName,
+    required this.onSessionSelected,
+  });
+
+  final String packageName;
+  final void Function(String sessionId) onSessionSelected;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final chatState = ref.watch(
+      aiChatRuntimeProvider(packageName: packageName),
+    );
+    final chatNotifier = ref.read(
+      aiChatRuntimeProvider(packageName: packageName).notifier,
+    );
+    final sessions = chatNotifier.getSessions();
+    final isZh = context.isZh;
+    final currentId = chatState.currentSessionId;
+    final appInfoAsync = ref.watch(
+      getAppByPackageNameProvider(packageName: packageName),
+    );
+    final activeAiConfigMeta = ref.watch(activeAiConfigMetaProvider);
+    final chatSurface = context.theme.scaffoldBackgroundColor;
+
+    return Drawer(
+      width: 304.w,
+      backgroundColor: chatSurface,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.fromLTRB(20.w, 16.h, 16.w, 12.h),
+              decoration: BoxDecoration(
+                color: chatSurface,
+                border: Border(
+                  bottom: BorderSide(color: context.colorScheme.outlineVariant),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  appInfoAsync.when(
+                    data: (app) => Row(
+                      children: [
+                        if (app?.icon != null)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10.r),
+                            child: Image.memory(
+                              app!.icon,
+                              width: 42.w,
+                              height: 42.w,
+                            ),
+                          )
+                        else
+                          Icon(
+                            Icons.android,
+                            size: 42.w,
+                            color: context.colorScheme.primary,
+                          ),
+                        SizedBox(width: 12.w),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                app?.name ?? context.l10n.aiIdentifying,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 16.sp,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                packageName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10.sp,
+                                  color: context.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    loading: () => const SizedBox(height: 42),
+                    error: (_, __) => const SizedBox.shrink(),
+                  ),
+                  activeAiConfigMeta.when(
+                    data: (meta) => meta.isBuiltin
+                        ? Padding(
+                            padding: EdgeInsets.only(top: 6.h),
+                            child: Text(
+                              context.l10n.aiBuiltinConfigName,
+                              style: TextStyle(
+                                fontSize: 10.sp,
+                                color: Colors.orange.shade700,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
+                  ),
+                  SizedBox(height: 14.h),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          isZh ? '对话列表' : 'Conversations',
+                          style: TextStyle(
+                            fontSize: 15.sp,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      _DrawerActionButton(
+                        icon: Icons.settings_rounded,
+                        tooltip: isZh ? '快捷设置' : 'Quick Settings',
+                        color: context.colorScheme.secondary,
+                        onTap: () {
+                          Navigator.pop(context);
+                          AiQuickSettingsMenu.show(
+                            context,
+                            packageName: packageName,
+                          );
+                        },
+                      ),
+                      SizedBox(width: 6.w),
+                      _DrawerActionButton(
+                        icon: Icons.add_comment_rounded,
+                        tooltip: context.l10n.aiNewSession,
+                        onTap: () async {
+                          Navigator.pop(context);
+                          final controller = TextEditingController(
+                            text:
+                                '${context.l10n.aiNewSession} ${DateFormat('MM-dd HH:mm').format(DateTime.now())}',
+                          );
+                          final name = await CustomDialog.show<String>(
+                            title: Text(context.l10n.aiNewSession),
+                            child: TextField(
+                              controller: controller,
+                              autofocus: true,
+                              decoration: InputDecoration(
+                                labelText: context.l10n.aiSessionName,
+                                hintText: context.l10n.aiSessionNameHint,
+                              ),
+                            ),
+                            actionButtons: [
+                              TextButton(
+                                onPressed: () => SmartDialog.dismiss(),
+                                child: Text(context.l10n.cancel),
+                              ),
+                              TextButton(
+                                onPressed: () => SmartDialog.dismiss(
+                                  result: controller.text.trim(),
+                                ),
+                                child: Text(context.l10n.confirm),
+                              ),
+                            ],
+                          );
+                          if (name != null && name.isNotEmpty) {
+                            await chatNotifier.createSession(name);
+                          }
+                        },
+                      ),
+                      SizedBox(width: 6.w),
+                      _DrawerActionButton(
+                        icon: Icons.delete_forever_rounded,
+                        tooltip: context.l10n.aiDeleteHistory,
+                        color: Colors.redAccent,
+                        onTap: () async {
+                          Navigator.pop(context);
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: Text(context.l10n.aiDeleteConfirmTitle),
+                              content: Text(
+                                context.l10n.aiDeleteConfirmContent,
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: Text(context.l10n.cancel),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: Text(context.l10n.confirm),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            await chatNotifier.deleteHistory();
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: sessions.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32.w),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.chat_bubble_outline,
+                              size: 48.sp,
+                              color: context.theme.hintColor.withValues(
+                                alpha: 0.4,
+                              ),
+                            ),
+                            SizedBox(height: 12.h),
+                            Text(
+                              isZh ? '暂无对话' : 'No conversations',
+                              style: TextStyle(
+                                fontSize: 14.sp,
+                                color: context.theme.hintColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: EdgeInsets.fromLTRB(12.w, 14.h, 12.w, 20.h),
+                      itemCount: sessions.length,
+                      separatorBuilder: (_, __) => SizedBox(height: 6.h),
+                      itemBuilder: (context, index) {
+                        final session = sessions[index];
+                        final isActive = session.id == currentId;
+                        return InkWell(
+                          onTap: () {
+                            Navigator.pop(context);
+                            onSessionSelected(session.id);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 14.w,
+                              vertical: 13.h,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isActive
+                                  ? context.colorScheme.primary.withValues(
+                                      alpha: 0.1,
+                                    )
+                                  : chatSurface,
+                              borderRadius: BorderRadius.circular(12.r),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isActive
+                                      ? Icons.chat_bubble_rounded
+                                      : Icons.chat_bubble_outline_rounded,
+                                  size: 18.sp,
+                                  color: isActive
+                                      ? context.colorScheme.primary
+                                      : context.theme.hintColor,
+                                ),
+                                SizedBox(width: 12.w),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        session.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 14.sp,
+                                          fontWeight: isActive
+                                              ? FontWeight.w600
+                                              : FontWeight.normal,
+                                          color: isActive
+                                              ? context.colorScheme.primary
+                                              : null,
+                                        ),
+                                      ),
+                                      SizedBox(height: 2.h),
+                                      Text(
+                                        _formatTime(session.updatedAt, isZh),
+                                        style: TextStyle(
+                                          fontSize: 11.sp,
+                                          color: isActive
+                                              ? context.colorScheme.primary
+                                                    .withValues(alpha: 0.72)
+                                              : context
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatTime(DateTime time, bool isZh) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+
+    if (diff.inMinutes < 1) {
+      return isZh ? '刚刚' : 'Just now';
+    } else if (diff.inHours < 1) {
+      return isZh ? '${diff.inMinutes} 分钟前' : '${diff.inMinutes}m ago';
+    } else if (diff.inDays < 1) {
+      return isZh ? '${diff.inHours} 小时前' : '${diff.inHours}h ago';
+    } else if (diff.inDays < 7) {
+      return isZh ? '${diff.inDays} 天前' : '${diff.inDays}d ago';
+    } else {
+      return DateFormat(isZh ? 'MM月dd日' : 'MMM dd').format(time);
+    }
+  }
+}
+
+class _DrawerActionButton extends StatelessWidget {
+  const _DrawerActionButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.color,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = color ?? context.colorScheme.primary;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10.r),
+        child: Padding(
+          padding: EdgeInsets.all(7.w),
+          child: Icon(icon, size: 19.sp, color: foreground),
+        ),
+      ),
+    );
+  }
+}

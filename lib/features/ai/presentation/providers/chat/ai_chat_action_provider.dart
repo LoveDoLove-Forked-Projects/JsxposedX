@@ -179,19 +179,21 @@ class AiChatAction extends _$AiChatAction {
         ref.read(disabledToolsStoreProvider)[configId] ?? <String>{};
     final userRisky =
         ref.read(userRiskyToolsStoreProvider)[configId] ?? <String, bool>{};
-    final finalToolDefs = snapshot.toolDefinitions.map((d) {
-      // 危险判定按工具独立计算：用户的明确选择完全覆盖系统默认。
-      // 未配置用系统默认；配置 true/false 一律以用户为准，
-      // 保证系统默认危险的工具也能被用户关闭。
-      final effectiveRisky = userRisky[d.name] ?? (d.isRisky == true);
-      return AiToolDefinition(
-        name: d.name,
-        description: d.description,
-        descriptionEn: d.descriptionEn,
-        parameters: d.parameters,
-        isRisky: effectiveRisky,
-      );
-    }).toList(growable: false);
+    final finalToolDefs = snapshot.toolDefinitions
+        .map((d) {
+          // 危险判定按工具独立计算：用户的明确选择完全覆盖系统默认。
+          // 未配置用系统默认；配置 true/false 一律以用户为准，
+          // 保证系统默认危险的工具也能被用户关闭。
+          final effectiveRisky = userRisky[d.name] ?? (d.isRisky == true);
+          return AiToolDefinition(
+            name: d.name,
+            description: d.description,
+            descriptionEn: d.descriptionEn,
+            parameters: d.parameters,
+            isRisky: effectiveRisky,
+          );
+        })
+        .toList(growable: false);
 
     return AiChatSessionEnvironment(
       id: 'reverse-${snapshot.scopeId}',
@@ -214,8 +216,10 @@ class AiChatAction extends _$AiChatAction {
                   : const <String, Object?>{},
             );
           })
-          .where((tool) =>
-              tool.name.isNotEmpty && !disabledTools.contains(tool.name))
+          .where(
+            (tool) =>
+                tool.name.isNotEmpty && !disabledTools.contains(tool.name),
+          )
           .toList(growable: false),
       toolExecutor: snapshot.toolExecutor == null
           ? null
@@ -242,8 +246,7 @@ class AiChatAction extends _$AiChatAction {
   ) {
     if (identical(left, right)) return true;
     if (left == null || right == null) return false;
-    if (left.version != right.version ||
-        left.scopeId != right.scopeId) {
+    if (left.version != right.version || left.scopeId != right.scopeId) {
       return false;
     }
     final leftNames = left.tools.map((t) => t.name).toSet();
@@ -258,16 +261,19 @@ class AiChatAction extends _$AiChatAction {
       await _migrateLegacySessions(config);
       final sessions = await getSessionsAsync();
       if (_disposed || sessions.isEmpty) return;
-      final lastActive = await ref
-          .read(aiChatQueryRepositoryProvider)
-          .getLastActiveSessionId(packageName);
       if (_disposed) return;
-      final initial =
-          lastActive != null &&
-              sessions.any((session) => session.id == lastActive)
-          ? lastActive
-          : sessions.first.id;
-      await switchSession(initial);
+      state = state.copyWith(
+        currentSessionId: null,
+        standardMessages: const [],
+        viewMessages: const [],
+        visibleMessageCount: 10,
+        hasOlderMessages: false,
+        sessionContext: AiChatSessionContext(
+          sessionRules: state.systemPrompt ?? '',
+        ),
+        contextStats: const AiChatContextStats(),
+        contextVersion: AiChatSessionContext.currentVersion,
+      );
     } catch (error) {
       if (_disposed) return;
       state = state.copyWith(error: 'AI 会话加载失败：$error', isStreaming: false);

@@ -246,12 +246,12 @@ class AiChatList extends HookConsumerWidget {
                       );
                     }
                     final streamingHasApproval =
-                      chatNotifier.hasPendingToolApproval &&
-                      message.toolInvocations.any(
-                        (inv) =>
-                            inv.status ==
-                            AiToolInvocationViewStatus.awaitingApproval,
-                      );
+                        chatNotifier.hasPendingToolApproval &&
+                        message.toolInvocations.any(
+                          (inv) =>
+                              inv.status ==
+                              AiToolInvocationViewStatus.awaitingApproval,
+                        );
                     return _StreamingAiChatBubble(
                       key: ValueKey(message.id),
                       initialContent: message.content,
@@ -568,7 +568,9 @@ class _ChatErrorBanner extends HookWidget {
                     Text(
                       body,
                       style: TextStyle(
-                        color: context.colorScheme.onErrorContainer.withValues(alpha: 0.8),
+                        color: context.colorScheme.onErrorContainer.withValues(
+                          alpha: 0.8,
+                        ),
                         fontSize: 11.5 * scale,
                         fontFamily: 'monospace',
                         height: 1.45,
@@ -616,9 +618,11 @@ class _ChatErrorBanner extends HookWidget {
 }
 
 class _EmptyChatState extends StatelessWidget {
-  const _EmptyChatState({required this.isCompact});
+  const _EmptyChatState({required this.isCompact, this.title, this.subtitle});
 
   final bool isCompact;
+  final String? title;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
