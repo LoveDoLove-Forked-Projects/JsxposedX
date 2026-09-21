@@ -607,7 +607,12 @@ class AiChatSessionController {
     final executor = environment!.toolExecutor!;
     AiToolResult rawResult;
     try {
-      rawResult = await executor.execute(toolCall);
+      rawResult = await executor.execute(
+        toolCall,
+        onProgress: (progress) {
+          _sendToolProgress(toolCall.id, progress);
+        },
+      );
     } catch (error) {
       rawResult = AiToolResult(
         toolCallId: toolCall.id,
