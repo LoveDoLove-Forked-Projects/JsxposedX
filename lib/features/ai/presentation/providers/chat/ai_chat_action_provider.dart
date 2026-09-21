@@ -62,6 +62,7 @@ class AiChatAction extends _$AiChatAction {
   AiChatSessionController? _sessionController;
   StreamSubscription<AiChatSessionState>? _sessionSubscription;
   AiChatSessionEnvironment? _environment;
+  AiChatEnvironmentSnapshot? _lastSnapshot;
   bool _sessionReady = false;
   bool _disposed = false;
 
@@ -93,6 +94,17 @@ class AiChatAction extends _$AiChatAction {
       }
       unawaited(_attachSession());
     });
+
+    // 监听工具开关变化：实时更新会话中的工具列表与危险判定
+    ref.listen(disabledToolsStoreProvider, (previous, next) {
+      if (_disposed || _lastSnapshot == null) return;
+      _reapplyToolState();
+    });
+    ref.listen(userRiskyToolsStoreProvider, (previous, next) {
+      if (_disposed || _lastSnapshot == null) return;
+      _reapplyToolState();
+    });
+
     Future.microtask(_initializeSessions);
     return const AiChatRuntimeState();
   }
@@ -144,10 +156,10 @@ class AiChatAction extends _$AiChatAction {
         sessionRules: snapshot.systemPrompt,
       ),
     );
+    _lastSnapshot = snapshot;
     final previous = _environment;
     _environment = _standardEnvironment(snapshot);
-    if (previous?.version != _environment?.version ||
-        previous?.scopeId != _environment?.scopeId) {
+    if (!_environmentsEquivalent(previous, _environment)) {
       unawaited(_attachSession());
     }
   }
@@ -210,6 +222,34 @@ class AiChatAction extends _$AiChatAction {
           : _LegacyStandardToolExecutor(snapshot.toolExecutor!),
       toolDefinitions: finalToolDefs,
     );
+  }
+
+  /// 工具开关变化时重新应用环境
+  void _reapplyToolState() {
+    final snapshot = _lastSnapshot;
+    if (snapshot == null || _disposed) return;
+    final previous = _environment;
+    _environment = _standardEnvironment(snapshot);
+    if (!_environmentsEquivalent(previous, _environment)) {
+      unawaited(_attachSession());
+    }
+  }
+
+  /// 判断两个环境是否等价（version/scopeId/tools 均相同）
+  bool _environmentsEquivalent(
+    AiChatSessionEnvironment? left,
+    AiChatSessionEnvironment? right,
+  ) {
+    if (identical(left, right)) return true;
+    if (left == null || right == null) return false;
+    if (left.version != right.version ||
+        left.scopeId != right.scopeId) {
+      return false;
+    }
+    final leftNames = left.tools.map((t) => t.name).toSet();
+    final rightNames = right.tools.map((t) => t.name).toSet();
+    return leftNames.length == rightNames.length &&
+        leftNames.containsAll(rightNames);
   }
 
   Future<void> _initializeSessions() async {
@@ -828,7 +868,7 @@ class _LegacyStandardToolExecutor implements AiToolExecutor {
       toolCallId: result.toolCallId,
       name: result.toolName,
       success: result.success,
-      content: result.content,
+      content: result.success ? result.content : result.errorContent,
     );
   }
 }

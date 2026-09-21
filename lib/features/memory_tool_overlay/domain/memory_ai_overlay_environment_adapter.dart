@@ -189,7 +189,10 @@ class MemoryAiOverlayEnvironmentAdapter implements AiChatEnvironmentAdapter {
       systemPrompt: systemPrompt,
       toolsSpec: MemoryAiOverlayChatToolsSpec(),
       toolExecutor: ToolExecutor(
-        handlers: buildMemoryAiOverlayToolHandlers(context: toolContext),
+        handlers: {
+          for (final h in buildMemoryAiOverlayToolHandlers(context: toolContext))
+            h.toolName: h,
+        },
       ),
     );
   }

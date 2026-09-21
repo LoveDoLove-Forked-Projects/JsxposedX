@@ -20,6 +20,8 @@ import com.jsxposed.x.core.bridge.so_analysis_native.SoAnalysisNative
 import com.jsxposed.x.core.bridge.so_analysis_native.SoAnalysisNativeImpl
 import com.jsxposed.x.core.bridge.lsposed_native.LSPosedNative
 import com.jsxposed.x.core.bridge.lsposed_native.LSPosedNativeImpl
+import com.jsxposed.x.core.bridge.shell_native.ShellNative
+import com.jsxposed.x.core.bridge.shell_native.ShellNativeImpl
 import io.flutter.plugin.common.BinaryMessenger
 
 object NativeProvider {
@@ -57,6 +59,7 @@ object NativeProvider {
         ZygiskFridaNative.setUp(messenger, ZygiskFridaNativeImpl(context))
         OverlayFilePickerNative.register(context, messenger)
         UrlHelperNative.register(context, messenger)
+        ShellNative.setUp(messenger, ShellNativeImpl(context))
     }
 
     fun dispose() {

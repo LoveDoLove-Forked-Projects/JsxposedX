@@ -4,7 +4,8 @@ import 'package:JsxposedX/features/ai/domain/contracts/ai_chat_environment_adapt
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_environment_snapshot.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_context.dart';
 import 'package:JsxposedX/features/ai/domain/environments/apk_reverse_prompt_builder.dart';
-import 'package:JsxposedX/features/ai/domain/environments/apk_reverse_tool_handlers.dart';
+import 'package:JsxposedX/features/ai/domain/environments/ai_tool_runtime_context.dart';
+import 'package:JsxposedX/features/ai/domain/services/ai_tool_registry.dart';
 import 'package:JsxposedX/features/ai/domain/services/tool_executor.dart';
 import 'package:JsxposedX/features/apk_analysis/domain/repositories/apk_analysis_action_repository.dart';
 import 'package:JsxposedX/features/apk_analysis/domain/repositories/apk_analysis_query_repository.dart';
@@ -77,7 +78,29 @@ class ApkReverseChatEnvironmentAdapter implements AiChatEnvironmentAdapter {
         .withTools()
         .buildSystemPrompt();
 
-    final toolsSpec = ApkReverseChatToolsSpec(includeSoTools: true);
+    final allRegs = [
+      ...AiToolRegistry.apkReverse(includeSoTools: true),
+      ...AiToolRegistry.scriptLifecycle(),
+      ...AiToolRegistry.contentProduction(),
+      ...AiToolRegistry.dataAnalysis(),
+      ...AiToolRegistry.systemControl(),
+      ...AiToolRegistry.multimodal(),
+    ];
+
+    final ctx = ApkReverseToolRuntimeContext(
+      repo: _apkQueryRepository,
+      soDataSource: _soDataSource,
+      sessionId: nextSessionId,
+      dexPaths: _dexPaths,
+      packageName: packageName,
+      isZh: isZh,
+    );
+    final toolsSpec = ApkReverseChatToolsSpec(
+      includeSoTools: true,
+      definitionsOverride: allRegs
+          .map((r) => r.definition)
+          .toList(growable: false),
+    );
     return AiChatEnvironmentSnapshot.ready(
       scopeId: scopeId,
       environmentVersion: environmentVersion,
@@ -85,15 +108,12 @@ class ApkReverseChatEnvironmentAdapter implements AiChatEnvironmentAdapter {
       toolsSpec: toolsSpec,
       toolDefinitions: toolsSpec.toolDefinitions,
       toolExecutor: ToolExecutor(
-        handlers: buildApkReverseToolHandlers(
-          context: ApkReverseToolRuntimeContext(
-            repo: _apkQueryRepository,
-            soDataSource: _soDataSource,
-            sessionId: nextSessionId,
-            dexPaths: _dexPaths,
-          ),
-          includeSoTools: true,
-        ),
+        handlers: {
+          for (final r in allRegs) r.definition.name: r.handlerFactory(ctx),
+        },
+        registrations: {
+          for (final r in allRegs) r.definition.name: r,
+        },
       ),
     );
   }

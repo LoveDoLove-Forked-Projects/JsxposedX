@@ -4,6 +4,7 @@ import 'package:JsxposedX/core/models/ai_config.dart';
 import 'package:JsxposedX/features/ai/domain/constants/builtin_ai_config.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_tool_definition.dart';
+import 'package:JsxposedX/features/ai/domain/services/ai_tool_registry.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/config/ai_config_action_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/config/ai_config_query_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/config/disabled_tools_store.dart';
@@ -807,30 +808,77 @@ class _ToolList extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isZh = context.isZh;
+
+    // 菜单打开时从持久化存储加载数据（isAutoDispose=true 会在关闭时清除内存）
+    useEffect(() {
+      Future.microtask(() async {
+        await ref
+            .read(disabledToolsStoreProvider.notifier)
+            .loadDisabledTools(configId);
+        await ref
+            .read(userRiskyToolsStoreProvider.notifier)
+            .loadRisky(configId);
+      });
+      return null;
+    }, [configId]);
+
     final disabledTools =
         ref.watch(disabledToolsStoreProvider)[configId] ?? <String>{};
     final userRisky =
         ref.watch(userRiskyToolsStoreProvider)[configId] ?? <String, bool>{};
 
-    return Container(
-      decoration: BoxDecoration(
-        color: context.isDark
-            ? Colors.white.withValues(alpha: 0.04)
-            : Colors.grey[100],
-        borderRadius: BorderRadius.circular(12.r),
-      ),
-      child: Column(
-        children: toolDefinitions.asMap().entries.map((entry) {
-          final index = entry.key;
-          final tool = entry.value;
-          final isLast = index == toolDefinitions.length - 1;
-          final isEnabled = !disabledTools.contains(tool.name);
-          // 危险判定：每个工具独立计算，用户明确选择完全覆盖系统默认。
-          // 之前用 "用户标记 || 系统默认" 的并集逻辑，导致系统默认危险的
-          // 工具（如 generate_so_hook）开关永远开启、点击无反应。
-          final isRisky = userRisky[tool.name] ?? (tool.isRisky == true);
+    final grouped = <AiToolCategory, List<AiToolDefinition>>{};
+    for (final tool in toolDefinitions) {
+      final cat = AiToolRegistry.categoryOf(tool.name) ?? AiToolCategory.reverse;
+      grouped.putIfAbsent(cat, () => []).add(tool);
+    }
 
-          return _ToolListItem(
+    final categoryLabels = <AiToolCategory, String>{
+      AiToolCategory.reverse: isZh ? 'APK 逆向分析' : 'APK Reverse',
+      AiToolCategory.scriptLifecycle: isZh ? '脚本生命周期' : 'Script Lifecycle',
+      AiToolCategory.contentProduction: isZh ? '内容生产' : 'Content Production',
+      AiToolCategory.dataAnalysis: isZh ? '数据分析' : 'Data Analysis',
+      AiToolCategory.systemControl: isZh ? '系统管控' : 'System Control',
+      AiToolCategory.multimodal: isZh ? '多模态' : 'Multimodal',
+    };
+
+    final entries = grouped.entries.toList();
+    final widgets = <Widget>[];
+    for (var gi = 0; gi < entries.length; gi++) {
+      final group = entries[gi];
+      final cat = group.key;
+      final toolsInCat = group.value;
+      final isLastGroup = gi == entries.length - 1;
+
+      widgets.add(
+        Padding(
+          padding: EdgeInsets.only(
+            left: 12.w,
+            right: 12.w,
+            top: 8.h,
+            bottom: 4.h,
+          ),
+          child: Text(
+            categoryLabels[cat] ?? cat.name,
+            style: TextStyle(
+              fontSize: 12.sp,
+              fontWeight: FontWeight.w600,
+              color: context.isDark
+                  ? Colors.white.withValues(alpha: 0.7)
+                  : Colors.grey[700],
+            ),
+          ),
+        ),
+      );
+
+      for (var ti = 0; ti < toolsInCat.length; ti++) {
+        final tool = toolsInCat[ti];
+        final isLast = isLastGroup && ti == toolsInCat.length - 1;
+        final isEnabled = !disabledTools.contains(tool.name);
+        final isRisky = userRisky[tool.name] ?? (tool.isRisky == true);
+
+        widgets.add(
+          _ToolListItem(
             tool: tool,
             isEnabled: isEnabled,
             isRisky: isRisky,
@@ -865,7 +913,6 @@ class _ToolList extends HookConsumerWidget {
               if (isSaving.value) return;
               isSaving.value = true;
               try {
-                // 写入明确的反向值，用户选择覆盖系统默认
                 await ref
                     .read(userRiskyToolsStoreProvider.notifier)
                     .setRisky(configId, tool.name, !isRisky);
@@ -888,9 +935,19 @@ class _ToolList extends HookConsumerWidget {
                 }
               }
             },
-          );
-        }).toList(),
+          ),
+        );
+      }
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: context.isDark
+            ? Colors.white.withValues(alpha: 0.04)
+            : Colors.grey[100],
+        borderRadius: BorderRadius.circular(12.r),
       ),
+      child: Column(children: widgets),
     );
   }
 }

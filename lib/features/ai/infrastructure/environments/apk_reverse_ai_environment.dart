@@ -1,7 +1,7 @@
 import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_environment.dart';
 import 'package:JsxposedX/features/ai/domain/environments/apk_reverse_prompt_builder.dart';
-import 'package:JsxposedX/features/ai/domain/environments/apk_reverse_tool_definitions.dart';
-import 'package:JsxposedX/features/ai/domain/environments/apk_reverse_tool_handlers.dart';
+import 'package:JsxposedX/features/ai/domain/environments/ai_tool_runtime_context.dart';
+import 'package:JsxposedX/features/ai/domain/services/ai_tool_registry.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_context.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart'
     as system;
@@ -70,17 +70,33 @@ class ApkReverseAiEnvironment {
         .withApiSummary(apiSummary)
         .withTools()
         .buildSystemPrompt();
-    final definitions = ApkReverseToolDefinitions.allWithSo;
+    final allRegs = [
+      ...AiToolRegistry.apkReverse(includeSoTools: true),
+      ...AiToolRegistry.scriptLifecycle(),
+      ...AiToolRegistry.contentProduction(),
+      ...AiToolRegistry.dataAnalysis(),
+      ...AiToolRegistry.systemControl(),
+      ...AiToolRegistry.multimodal(),
+    ];
+
+    final ctx = ApkReverseToolRuntimeContext(
+      repo: _apkQueryRepository,
+      soDataSource: _soDataSource,
+      sessionId: sessionId,
+      dexPaths: _dexPaths,
+      packageName: packageName,
+      isZh: isZh,
+    );
+    final definitions = allRegs
+        .map((r) => r.definition)
+        .toList(growable: false);
     final legacyExecutor = ToolExecutor(
-      handlers: buildApkReverseToolHandlers(
-        context: ApkReverseToolRuntimeContext(
-          repo: _apkQueryRepository,
-          soDataSource: _soDataSource,
-          sessionId: sessionId,
-          dexPaths: _dexPaths,
-        ),
-        includeSoTools: true,
-      ),
+      handlers: {
+        for (final r in allRegs) r.definition.name: r.handlerFactory(ctx),
+      },
+      registrations: {
+        for (final r in allRegs) r.definition.name: r,
+      },
     );
 
     final configuration = AiChatSessionEnvironment(
@@ -138,7 +154,7 @@ class _LegacyToolExecutorBridge implements AiToolExecutor {
       toolCallId: result.toolCallId,
       name: result.toolName,
       success: result.success,
-      content: result.content,
+      content: result.success ? result.content : result.errorContent,
     );
   }
 }
