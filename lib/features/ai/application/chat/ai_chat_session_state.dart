@@ -11,6 +11,7 @@ enum AiChatSessionPhase {
   streaming,
   cancelling,
   failed,
+  awaitingToolApproval,
 }
 
 @freezed
@@ -42,4 +43,7 @@ abstract class AiChatSessionState with _$AiChatSessionState {
       assistant != null &&
       connection != null &&
       model != null;
+
+  bool get isAwaitingToolApproval =>
+      phase == AiChatSessionPhase.awaitingToolApproval;
 }

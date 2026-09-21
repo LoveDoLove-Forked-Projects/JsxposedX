@@ -10,12 +10,16 @@ class ToolResultCard extends HookWidget {
   final String content;
   final AiToolInvocationView? invocation;
   final VoidCallback? onRetry;
+  final VoidCallback? onApprove;
+  final VoidCallback? onReject;
 
   const ToolResultCard({
     super.key,
     required this.content,
     this.invocation,
     this.onRetry,
+    this.onApprove,
+    this.onReject,
   });
 
   @override
@@ -25,6 +29,8 @@ class ToolResultCard extends HookWidget {
       return _StructuredToolInvocationCard(
         invocation: structured,
         onRetry: onRetry,
+        onApprove: onApprove,
+        onReject: onReject,
       );
     }
     return _LegacyToolResultCard(content: content);
@@ -150,10 +156,14 @@ class _StructuredToolInvocationCard extends HookWidget {
   const _StructuredToolInvocationCard({
     required this.invocation,
     required this.onRetry,
+    this.onApprove,
+    this.onReject,
   });
 
   final AiToolInvocationView invocation;
   final VoidCallback? onRetry;
+  final VoidCallback? onApprove;
+  final VoidCallback? onReject;
 
   @override
   Widget build(BuildContext context) {
@@ -227,6 +237,37 @@ class _StructuredToolInvocationCard extends HookWidget {
                 onToggle: () => resultExpanded.value = !resultExpanded.value,
               ),
             ],
+            if (invocation.status == AiToolInvocationViewStatus.awaitingApproval) ...[
+              SizedBox(height: 12 * scale),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: onReject,
+                    icon: Icon(Icons.close_rounded, size: 16 * scale),
+                    label: Text(context.isZh ? '拒绝' : 'Reject'),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      textStyle: TextStyle(fontSize: 12 * scale),
+                      foregroundColor: const Color(0xFFF44336),
+                      side: const BorderSide(color: Color(0xFFF44336)),
+                    ),
+                  ),
+                  SizedBox(width: 10 * scale),
+                  FilledButton.icon(
+                    onPressed: onApprove,
+                    icon: Icon(Icons.check_rounded, size: 16 * scale),
+                    label: Text(context.isZh ? '同意执行' : 'Approve'),
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      textStyle: TextStyle(fontSize: 12 * scale),
+                      backgroundColor: const Color(0xFF4CAF50),
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             if (invocation.status == AiToolInvocationViewStatus.failed &&
                 onRetry != null) ...[
               SizedBox(height: 10 * scale),
@@ -255,6 +296,7 @@ class _StructuredToolInvocationCard extends HookWidget {
       AiToolInvocationViewStatus.running => const Color(0xFF1976D2),
       AiToolInvocationViewStatus.succeeded => const Color(0xFF4CAF50),
       AiToolInvocationViewStatus.failed => const Color(0xFFF44336),
+      AiToolInvocationViewStatus.awaitingApproval => const Color(0xFFFF9800),
     };
   }
 
@@ -279,6 +321,8 @@ class _StructuredToolInvocationCard extends HookWidget {
       AiToolInvocationViewStatus.succeeded =>
         context.isZh ? '执行成功' : 'Succeeded',
       AiToolInvocationViewStatus.failed => context.isZh ? '执行失败' : 'Failed',
+      AiToolInvocationViewStatus.awaitingApproval =>
+        context.isZh ? '等待审批' : 'Awaiting Approval',
     };
   }
 
@@ -309,6 +353,9 @@ class _StatusIcon extends HookWidget {
         turns: controller,
         child: Icon(Icons.settings_outlined, color: color, size: 16 * scale),
       );
+    }
+    if (status == AiToolInvocationViewStatus.awaitingApproval) {
+      return Icon(Icons.help_outline_rounded, color: color, size: 16 * scale);
     }
     return Icon(
       status == AiToolInvocationViewStatus.succeeded

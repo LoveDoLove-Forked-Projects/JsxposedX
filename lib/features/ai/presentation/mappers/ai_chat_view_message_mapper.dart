@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_state.dart';
 import 'package:JsxposedX/features/ai/application/chat/ai_stream_snapshot.dart';
 import 'package:JsxposedX/features/ai/application/chat/ai_transport_trace.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
@@ -10,7 +11,11 @@ import 'package:JsxposedX/features/ai/presentation/states/ai_tool_invocation_vie
 class AiChatViewMessageMapper {
   const AiChatViewMessageMapper();
 
-  List<AiChatViewMessage> mapHistory(List<AiMessage> messages) {
+  List<AiChatViewMessage> mapHistory(
+    List<AiMessage> messages, {
+    AiChatSessionPhase phase = AiChatSessionPhase.ready,
+  }) {
+    final isAwaitingApproval = phase == AiChatSessionPhase.awaitingToolApproval;
     final display = <AiChatViewMessage>[];
     final pendingCalls = <String, _PendingToolCall>{};
     final pendingOrder = <String>[];
@@ -19,11 +24,14 @@ class AiChatViewMessageMapper {
       for (final id in pendingOrder) {
         final pending = pendingCalls[id];
         if (pending == null) continue;
+        final status = isAwaitingApproval
+            ? AiToolInvocationViewStatus.awaitingApproval
+            : AiToolInvocationViewStatus.running;
         final invocation = AiToolInvocationView(
           callId: id,
           name: pending.call.name,
           argumentsJson: _encodeToolArguments(pending.call.arguments),
-          status: AiToolInvocationViewStatus.running,
+          status: status,
           requestedAt: pending.requestedAt,
         );
         display.add(

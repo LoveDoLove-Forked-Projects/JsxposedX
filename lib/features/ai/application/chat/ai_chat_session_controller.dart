@@ -51,6 +51,8 @@ class AiChatSessionController {
   Future<void> _checkpointTail = Future.value();
   Future<void>? _initialization;
   bool _closed = false;
+  Completer<bool>? _approvalCompleter;
+  AiMessage? _pendingApprovalAssistantMessage;
 
   AiChatSessionState get state => _state;
 
@@ -532,6 +534,44 @@ class AiChatSessionController {
         placeholder,
       );
       workingHistory = [...workingHistory, assistantMessage];
+
+      final needsApproval = _needsToolApproval(assistant.toolPolicy);
+      if (needsApproval) {
+        _emit(
+          _state.copyWith(
+            messages: workingHistory,
+            phase: AiChatSessionPhase.awaitingToolApproval,
+            activeRequestId: null,
+            activeAssistantMessageId: null,
+            runSnapshot: null,
+          ),
+        );
+        _pendingApprovalAssistantMessage = assistantMessage;
+        _approvalCompleter = Completer<bool>();
+        final approved = await _approvalCompleter!.future;
+        _approvalCompleter = null;
+        _pendingApprovalAssistantMessage = null;
+
+        if (!approved) {
+          final rejectionMessages = _createRejectedToolResults(
+            assistantMessage,
+            assistant.toolPolicy.maxResultBytes,
+          );
+          workingHistory = [...workingHistory, ...rejectionMessages];
+          parentId = rejectionMessages.lastOrNull?.id ?? assistantMessage.id;
+          _emit(
+            _state.copyWith(
+              messages: workingHistory,
+              phase: AiChatSessionPhase.requesting,
+              activeRequestId: null,
+              activeAssistantMessageId: null,
+              runSnapshot: null,
+            ),
+          );
+          continue;
+        }
+      }
+
       _emit(
         _state.copyWith(
           messages: workingHistory,
@@ -654,7 +694,77 @@ class AiChatSessionController {
     return '${content.substring(0, maxBytes)}\n\n[tool result truncated]';
   }
 
+  void _sendToolProgress(String toolCallId, String progress) {
+    // 工具执行进度回调：可在后续版本中通过消息更新或独立进度卡片展示
+    // 当前版本通过工具执行状态变更（preparing -> running -> succeeded/failed）来展示进度
+  }
+
+  bool _needsToolApproval(AiToolPolicy toolPolicy) {
+    return toolPolicy.approvalMode == AiToolApprovalMode.always ||
+        (toolPolicy.approvalMode == AiToolApprovalMode.riskyOnly);
+  }
+
+  List<AiMessage> _createRejectedToolResults(
+    AiMessage assistantMessage,
+    int maxResultBytes,
+  ) {
+    final results = <AiMessage>[];
+    var previousTime =
+        assistantMessage.completedAt ?? assistantMessage.createdAt;
+    String? parentId = assistantMessage.id;
+    for (final part in assistantMessage.parts.whereType<AiToolCallPart>()) {
+      final now = _now().toUtc();
+      final createdAt = now.isAfter(previousTime)
+          ? now
+          : previousTime.add(const Duration(microseconds: 1));
+      final message = AiMessage(
+        id: _idFactory(),
+        conversationId: conversationId,
+        role: AiMessageRole.tool,
+        parts: [
+          AiContentPart.toolResult(
+            toolResult: AiToolResult(
+              toolCallId: part.toolCall.id,
+              name: part.toolCall.name,
+              success: false,
+              content: '工具调用被用户拒绝',
+            ),
+          ),
+        ],
+        parentId: parentId,
+        createdAt: createdAt,
+        completedAt: createdAt,
+      );
+      results.add(message);
+      parentId = message.id;
+      previousTime = message.completedAt ?? message.createdAt;
+    }
+    return results;
+  }
+
+  /// 批准当前等待审批的所有工具调用
+  void approvePendingTools() {
+    final completer = _approvalCompleter;
+    if (completer == null || completer.isCompleted) return;
+    completer.complete(true);
+  }
+
+  /// 拒绝当前等待审批的所有工具调用
+  void rejectPendingTools() {
+    final completer = _approvalCompleter;
+    if (completer == null || completer.isCompleted) return;
+    completer.complete(false);
+  }
+
+  /// 是否有等待审批的工具调用
+  bool get hasPendingToolApproval => _approvalCompleter != null && !_approvalCompleter!.isCompleted;
+
   void cancel() {
+    // 如果有等待审批的工具，先拒绝它们
+    final completer = _approvalCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(false);
+    }
     final run = _activeRun;
     if (run == null) return;
     _emit(_state.copyWith(phase: AiChatSessionPhase.cancelling));
@@ -828,6 +938,9 @@ class AiChatSessionController {
     _closed = true;
     _checkpointTimer?.cancel();
     _pendingCheckpointSnapshot = null;
+    _approvalCompleter?.complete(false);
+    _approvalCompleter = null;
+    _pendingApprovalAssistantMessage = null;
     _activeRun?.cancel();
     await _runSubscription?.cancel();
     await _checkpointTail;

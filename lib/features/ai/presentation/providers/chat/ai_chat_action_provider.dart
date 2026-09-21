@@ -325,7 +325,7 @@ class AiChatAction extends _$AiChatAction {
 
   void _applySessionState(AiChatSessionState next) {
     if (_disposed || next.conversationId != state.currentSessionId) return;
-    var display = _viewMapper.mapHistory(next.messages);
+    var display = _viewMapper.mapHistory(next.messages, phase: next.phase);
     final snapshot = next.runSnapshot;
     if (snapshot != null) {
       final id = next.activeAssistantMessageId ?? 'standard-streaming';
@@ -348,7 +348,8 @@ class AiChatAction extends _$AiChatAction {
     final streaming =
         next.phase == AiChatSessionPhase.requesting ||
         next.phase == AiChatSessionPhase.streaming ||
-        next.phase == AiChatSessionPhase.cancelling;
+        next.phase == AiChatSessionPhase.cancelling ||
+        next.phase == AiChatSessionPhase.awaitingToolApproval;
     if (!streaming && snapshot == null) _clearStreaming();
     state = state.copyWith(
       sessions: _updatedSessions(next.conversation),
@@ -641,6 +642,22 @@ class AiChatAction extends _$AiChatAction {
     }
     controller.cancel();
   }
+
+  /// 批准当前等待审批的工具调用
+  void approvePendingTools() {
+    final controller = _readyController(showError: false);
+    controller?.approvePendingTools();
+  }
+
+  /// 拒绝当前等待审批的工具调用
+  void rejectPendingTools() {
+    final controller = _readyController(showError: false);
+    controller?.rejectPendingTools();
+  }
+
+  /// 是否有等待审批的工具调用
+  bool get hasPendingToolApproval =>
+      _sessionController?.hasPendingToolApproval ?? false;
 
   Future<void> deleteSession(String sessionId) async {
     if (state.currentSessionId == sessionId && state.isStreaming) {

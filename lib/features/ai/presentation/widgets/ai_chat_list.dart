@@ -245,6 +245,13 @@ class AiChatList extends HookConsumerWidget {
                         ),
                       );
                     }
+                    final streamingHasApproval =
+                      chatNotifier.hasPendingToolApproval &&
+                      message.toolInvocations.any(
+                        (inv) =>
+                            inv.status ==
+                            AiToolInvocationViewStatus.awaitingApproval,
+                      );
                     return _StreamingAiChatBubble(
                       key: ValueKey(message.id),
                       initialContent: message.content,
@@ -258,8 +265,22 @@ class AiChatList extends HookConsumerWidget {
                       toolInvocations: message.toolInvocations,
                       onRetry: () => chatNotifier.retryByMessageId(message.id),
                       packageName: packageName,
+                      onToolApprove: streamingHasApproval
+                          ? () => chatNotifier.approvePendingTools()
+                          : null,
+                      onToolReject: streamingHasApproval
+                          ? () => chatNotifier.rejectPendingTools()
+                          : null,
                     );
                   }
+
+                  final hasApprovalActions =
+                      chatNotifier.hasPendingToolApproval &&
+                      message.toolInvocations.any(
+                        (inv) =>
+                            inv.status ==
+                            AiToolInvocationViewStatus.awaitingApproval,
+                      );
 
                   return RepaintBoundary(
                     child: bubbleBuilder != null
@@ -326,6 +347,12 @@ class AiChatList extends HookConsumerWidget {
                                 : null,
                             rawDetails: message.rawDetails,
                             toolInvocations: message.toolInvocations,
+                            onToolApprove: hasApprovalActions
+                                ? () => chatNotifier.approvePendingTools()
+                                : null,
+                            onToolReject: hasApprovalActions
+                                ? () => chatNotifier.rejectPendingTools()
+                                : null,
                           ),
                   );
                 },
@@ -718,6 +745,8 @@ class _StreamingAiChatBubble extends HookWidget {
     this.toolInvocations = const <AiToolInvocationView>[],
     this.onRetry,
     this.packageName,
+    this.onToolApprove,
+    this.onToolReject,
   });
 
   final String initialContent;
@@ -729,6 +758,8 @@ class _StreamingAiChatBubble extends HookWidget {
   final List<AiToolInvocationView> toolInvocations;
   final VoidCallback? onRetry;
   final String? packageName;
+  final VoidCallback? onToolApprove;
+  final VoidCallback? onToolReject;
 
   @override
   Widget build(BuildContext context) {
@@ -800,6 +831,8 @@ class _StreamingAiChatBubble extends HookWidget {
             : null,
         rawDetails: null,
         toolInvocations: toolInvocations,
+        onToolApprove: onToolApprove,
+        onToolReject: onToolReject,
       ),
     );
   }

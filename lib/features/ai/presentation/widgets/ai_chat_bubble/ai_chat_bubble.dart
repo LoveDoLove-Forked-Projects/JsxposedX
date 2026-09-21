@@ -20,6 +20,8 @@ abstract class BaseAiChatBubble extends StatelessWidget {
   final VoidCallback? onRegenerate;
   final String? rawDetails;
   final List<AiToolInvocationView> toolInvocations;
+  final VoidCallback? onToolApprove;
+  final VoidCallback? onToolReject;
 
   const BaseAiChatBubble({
     super.key,
@@ -36,6 +38,8 @@ abstract class BaseAiChatBubble extends StatelessWidget {
     this.onRegenerate,
     this.rawDetails,
     this.toolInvocations = const <AiToolInvocationView>[],
+    this.onToolApprove,
+    this.onToolReject,
   });
 
   @protected
@@ -54,6 +58,8 @@ abstract class BaseAiChatBubble extends StatelessWidget {
       onRegenerate: onRegenerate,
       rawDetails: rawDetails,
       toolInvocations: toolInvocations,
+      onToolApprove: onToolApprove,
+      onToolReject: onToolReject,
     );
   }
 
@@ -103,5 +109,7 @@ class AiChatBubble extends BaseAiChatBubble {
     super.onRegenerate,
     super.rawDetails,
     super.toolInvocations,
+    super.onToolApprove,
+    super.onToolReject,
   });
 }

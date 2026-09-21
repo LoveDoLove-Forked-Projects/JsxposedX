@@ -61,6 +61,8 @@ abstract class BaseBubbleContentPart {
               content: state.content,
               invocation: state.toolInvocations[index],
               onRetry: state.onRetry,
+              onApprove: state.onToolApprove,
+              onReject: state.onToolReject,
             ),
           ],
         ],

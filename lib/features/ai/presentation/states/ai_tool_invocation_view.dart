@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-enum AiToolInvocationViewStatus { preparing, running, succeeded, failed }
+enum AiToolInvocationViewStatus { preparing, running, succeeded, failed, awaitingApproval }
 
 @immutable
 class AiToolInvocationView {
@@ -28,7 +28,8 @@ class AiToolInvocationView {
 
   bool get isRunning =>
       status == AiToolInvocationViewStatus.preparing ||
-      status == AiToolInvocationViewStatus.running;
+      status == AiToolInvocationViewStatus.running ||
+      status == AiToolInvocationViewStatus.awaitingApproval;
 
   bool get success => status == AiToolInvocationViewStatus.succeeded;
 

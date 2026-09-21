@@ -17,6 +17,8 @@ class BubbleState {
   final VoidCallback? onRegenerate;
   final String? rawDetails;
   final List<AiToolInvocationView> toolInvocations;
+  final VoidCallback? onToolApprove;
+  final VoidCallback? onToolReject;
 
   const BubbleState({
     required this.content,
@@ -32,6 +34,8 @@ class BubbleState {
     this.onRegenerate,
     this.rawDetails,
     this.toolInvocations = const <AiToolInvocationView>[],
+    this.onToolApprove,
+    this.onToolReject,
   });
 
   bool get isUser => role == 'user';
