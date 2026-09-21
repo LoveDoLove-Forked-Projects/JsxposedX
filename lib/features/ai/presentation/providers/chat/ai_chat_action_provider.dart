@@ -7,6 +7,7 @@ import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_environme
 import 'package:JsxposedX/features/ai/application/chat/ai_chat_session_state.dart';
 import 'package:JsxposedX/features/ai/domain/contracts/ai_chat_tool_executor_contract.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_environment_snapshot.dart';
+import 'package:JsxposedX/features/ai/domain/models/ai_tool_definition.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_chat_session_context.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_response_issue.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_session_init_state.dart';
@@ -17,6 +18,8 @@ import 'package:JsxposedX/features/ai/infrastructure/migration/legacy_ai_convers
 import 'package:JsxposedX/features/ai/infrastructure/services/ai_connection_test_service.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/chat/ai_chat_query_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/config/ai_config_query_provider.dart';
+import 'package:JsxposedX/features/ai/presentation/providers/config/disabled_tools_store.dart';
+import 'package:JsxposedX/features/ai/presentation/providers/config/user_risky_tools_store.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/system/ai_system_providers.dart';
 import 'package:JsxposedX/features/ai/presentation/mappers/ai_chat_view_message_mapper.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_runtime_state.dart';
@@ -136,6 +139,7 @@ class AiChatAction extends _$AiChatAction {
           : null,
       toolsSpec: snapshot.toolsSpec,
       toolExecutor: snapshot.toolExecutor,
+      toolDefinitions: snapshot.toolDefinitions,
       sessionContext: state.sessionContext.copyWith(
         sessionRules: snapshot.systemPrompt,
       ),
@@ -156,6 +160,27 @@ class AiChatAction extends _$AiChatAction {
     final tools =
         snapshot.toolsSpec?.buildToolsJson(apiType: apiType) ??
         const <Map<String, dynamic>>[];
+
+    // 读取被禁用 + 用户自定义危险工具，合并到 toolDefinitions
+    final configId = ref.read(aiConfigProvider).value?.id ?? '';
+    final disabledTools =
+        ref.read(disabledToolsStoreProvider)[configId] ?? <String>{};
+    final userRisky =
+        ref.read(userRiskyToolsStoreProvider)[configId] ?? <String, bool>{};
+    final finalToolDefs = snapshot.toolDefinitions.map((d) {
+      // 危险判定按工具独立计算：用户的明确选择完全覆盖系统默认。
+      // 未配置用系统默认；配置 true/false 一律以用户为准，
+      // 保证系统默认危险的工具也能被用户关闭。
+      final effectiveRisky = userRisky[d.name] ?? (d.isRisky == true);
+      return AiToolDefinition(
+        name: d.name,
+        description: d.description,
+        descriptionEn: d.descriptionEn,
+        parameters: d.parameters,
+        isRisky: effectiveRisky,
+      );
+    }).toList(growable: false);
+
     return AiChatSessionEnvironment(
       id: 'reverse-${snapshot.scopeId}',
       scopeId: snapshot.scopeId,
@@ -177,11 +202,13 @@ class AiChatAction extends _$AiChatAction {
                   : const <String, Object?>{},
             );
           })
-          .where((tool) => tool.name.isNotEmpty)
+          .where((tool) =>
+              tool.name.isNotEmpty && !disabledTools.contains(tool.name))
           .toList(growable: false),
       toolExecutor: snapshot.toolExecutor == null
           ? null
           : _LegacyStandardToolExecutor(snapshot.toolExecutor!),
+      toolDefinitions: finalToolDefs,
     );
   }
 

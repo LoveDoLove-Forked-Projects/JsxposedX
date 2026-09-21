@@ -204,7 +204,7 @@ class AiReverseHeader extends HookConsumerWidget {
                   icon: Icons.settings_rounded,
                   tooltip: context.isZh ? '快捷设置' : 'Quick Settings',
                   color: context.colorScheme.secondary,
-                  onTap: () => AiQuickSettingsMenu.show(context),
+                  onTap: () => AiQuickSettingsMenu.show(context, packageName: packageName),
                 ),
                 SizedBox(width: 8.w),
                 _HeaderActionButton(

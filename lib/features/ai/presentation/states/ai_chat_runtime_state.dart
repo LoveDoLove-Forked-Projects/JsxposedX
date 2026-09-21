@@ -4,6 +4,7 @@ import 'package:JsxposedX/features/ai/domain/models/ai_chat_session_context.dart
 import 'package:JsxposedX/features/ai/domain/models/ai_response_issue.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_session_init_state.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
+import 'package:JsxposedX/features/ai/domain/models/ai_tool_definition.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_view_message.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_session_view.dart';
 
@@ -26,6 +27,7 @@ class AiChatRuntimeState {
     this.contextVersion = AiChatSessionContext.currentVersion,
     this.toolsSpec,
     this.toolExecutor,
+    this.toolDefinitions = const [],
   });
 
   final List<AiMessage> standardMessages;
@@ -45,6 +47,7 @@ class AiChatRuntimeState {
   final int contextVersion;
   final AiChatToolsSpec? toolsSpec;
   final AiChatToolExecutorContract? toolExecutor;
+  final List<AiToolDefinition> toolDefinitions;
   List<AiChatViewMessage> get visibleViewMessages {
     if (viewMessages.length <= visibleMessageCount) {
       return List<AiChatViewMessage>.unmodifiable(viewMessages);
@@ -126,6 +129,7 @@ class AiChatRuntimeState {
     int? contextVersion,
     Object? toolsSpec = _runtimeStateSentinel,
     Object? toolExecutor = _runtimeStateSentinel,
+    Object? toolDefinitions = _runtimeStateSentinel,
   }) {
     return AiChatRuntimeState(
       standardMessages: standardMessages ?? this.standardMessages,
@@ -159,6 +163,9 @@ class AiChatRuntimeState {
       toolExecutor: identical(toolExecutor, _runtimeStateSentinel)
           ? this.toolExecutor
           : toolExecutor as AiChatToolExecutorContract?,
+      toolDefinitions: identical(toolDefinitions, _runtimeStateSentinel)
+          ? this.toolDefinitions
+          : toolDefinitions as List<AiToolDefinition>,
     );
   }
 }

@@ -77,11 +77,13 @@ class ApkReverseChatEnvironmentAdapter implements AiChatEnvironmentAdapter {
         .withTools()
         .buildSystemPrompt();
 
+    final toolsSpec = ApkReverseChatToolsSpec(includeSoTools: true);
     return AiChatEnvironmentSnapshot.ready(
       scopeId: scopeId,
       environmentVersion: environmentVersion,
       systemPrompt: systemPrompt,
-      toolsSpec: ApkReverseChatToolsSpec(includeSoTools: true),
+      toolsSpec: toolsSpec,
+      toolDefinitions: toolsSpec.toolDefinitions,
       toolExecutor: ToolExecutor(
         handlers: buildApkReverseToolHandlers(
           context: ApkReverseToolRuntimeContext(

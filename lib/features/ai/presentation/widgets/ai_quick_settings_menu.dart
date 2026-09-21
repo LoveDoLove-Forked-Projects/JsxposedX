@@ -3,8 +3,11 @@ import 'package:JsxposedX/core/extensions/context_extensions.dart';
 import 'package:JsxposedX/core/models/ai_config.dart';
 import 'package:JsxposedX/features/ai/domain/constants/builtin_ai_config.dart';
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
+import 'package:JsxposedX/features/ai/domain/models/ai_tool_definition.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/config/ai_config_action_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/config/ai_config_query_provider.dart';
+import 'package:JsxposedX/features/ai/presentation/providers/config/disabled_tools_store.dart';
+import 'package:JsxposedX/features/ai/presentation/providers/config/user_risky_tools_store.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/runtime/ai_chat_runtime_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/system/ai_system_providers.dart';
 import 'package:flutter/material.dart';
@@ -12,12 +15,14 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// 聊天界面快捷设置菜单：模型选择 + 工具审批
+/// 聊天界面快捷设置菜单：模型选择 + 工具审批 + 工具管理
 class AiQuickSettingsMenu extends HookConsumerWidget {
-  const AiQuickSettingsMenu({super.key});
+  const AiQuickSettingsMenu({super.key, this.packageName});
+
+  final String? packageName;
 
   /// 显示快捷设置底部弹窗
-  static Future<void> show(BuildContext context) {
+  static Future<void> show(BuildContext context, {String? packageName}) {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -25,7 +30,7 @@ class AiQuickSettingsMenu extends HookConsumerWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
       ),
-      builder: (_) => const AiQuickSettingsMenu(),
+      builder: (_) => AiQuickSettingsMenu(packageName: packageName),
     );
   }
 
@@ -37,6 +42,11 @@ class AiQuickSettingsMenu extends HookConsumerWidget {
     final assistantsAsync = ref.watch(aiAssistantsV2Provider);
     final isZh = context.isZh;
 
+    // 读取工具定义列表
+    final toolDefs = packageName != null
+        ? ref.watch(aiChatRuntimeProvider(packageName: packageName!)).toolDefinitions
+        : <AiToolDefinition>[];
+
     return configAsync.when(
       loading: () => _LoadingContent(),
       error: (error, _) => _ErrorContent(
@@ -47,7 +57,8 @@ class AiQuickSettingsMenu extends HookConsumerWidget {
         final isBuiltin = isBuiltinAiConfig(config);
         final assistantId = 'legacy-assistant-${config.id}';
         final assistant = assistantsAsync.when(
-          data: (list) => list.where((a) => a.id == assistantId).firstOrNull,
+          data: (list) =>
+              list.where((a) => a.id == assistantId).firstOrNull,
           loading: () => null,
           error: (_, __) => null,
         );
@@ -56,6 +67,7 @@ class AiQuickSettingsMenu extends HookConsumerWidget {
           config: config,
           isBuiltin: isBuiltin,
           assistant: assistant,
+          toolDefinitions: toolDefs,
         );
       },
     );
@@ -103,11 +115,13 @@ class _MenuContent extends HookConsumerWidget {
     required this.config,
     required this.isBuiltin,
     required this.assistant,
+    this.toolDefinitions = const [],
   });
 
   final AiConfig config;
   final bool isBuiltin;
   final AiAssistantProfile? assistant;
+  final List<AiToolDefinition> toolDefinitions;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -139,56 +153,61 @@ class _MenuContent extends HookConsumerWidget {
     return DraggableScrollableSheet(
       initialChildSize: 0.65,
       minChildSize: 0.4,
-      maxChildSize: 0.9,
+      maxChildSize: 0.95,
       expand: false,
       builder: (context, scrollController) {
-        return SingleChildScrollView(
+        return ListView(
           controller: scrollController,
           padding: EdgeInsets.fromLTRB(20.w, 12.h, 20.w, 24.h),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Handle bar
-              Center(
-                child: Container(
-                  width: 36.w,
-                  height: 4.h,
-                  decoration: BoxDecoration(
-                    color: context.theme.hintColor.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2.r),
+          children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 36.w,
+                height: 4.h,
+                decoration: BoxDecoration(
+                  color: context.theme.hintColor.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2.r),
+                ),
+              ),
+            ),
+            SizedBox(height: 16.h),
+
+            // Title
+            Padding(
+              padding: EdgeInsets.only(bottom: 12.h),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isZh ? '快捷设置' : 'Quick Settings',
+                    style: TextStyle(
+                      fontSize: 18.sp,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
+                  SizedBox(height: 4.h),
+                  Text(
+                    isBuiltin
+                        ? (isZh
+                              ? '内置配置 - $currentModelId'
+                              : 'Built-in - $currentModelId')
+                        : config.name,
+                    style: TextStyle(
+                      fontSize: 12.sp,
+                      color: context.theme.hintColor,
+                    ),
+                  ),
+                ],
               ),
-              SizedBox(height: 16.h),
+            ),
 
-              // Title
-              Text(
-                isZh ? '快捷设置' : 'Quick Settings',
-                style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.w700),
-              ),
-              SizedBox(height: 4.h),
-              Text(
-                isBuiltin
-                    ? (isZh
-                          ? '内置配置 - $currentModelId'
-                          : 'Built-in - $currentModelId')
-                    : config.name,
-                style: TextStyle(
-                  fontSize: 12.sp,
-                  color: context.theme.hintColor,
-                ),
-              ),
-              SizedBox(height: 20.h),
-
-              // ── Model Selection ──
-              _sectionHeader(
-                context,
-                zh: '模型选择',
-                en: 'Model Selection',
-                icon: Icons.smart_toy_outlined,
-              ),
-              SizedBox(height: 8.h),
+            // ── Section 1: Model ──
+            _SettingsSection(
+              title: isZh ? '模型选择' : 'Model',
+              icon: Icons.smart_toy_outlined,
+              initiallyExpanded: false,
+              children: [
               modelsAsync.when(
                 loading: () => Padding(
                   padding: EdgeInsets.symmetric(vertical: 16.h),
@@ -312,16 +331,16 @@ class _MenuContent extends HookConsumerWidget {
                   );
                 },
               ),
-              SizedBox(height: 24.h),
+            ],
+            ),
+            SizedBox(height: 12.h),
 
-              // ── Tool Approval ──
-              _sectionHeader(
-                context,
-                zh: '工具审批',
-                en: 'Tool Approval',
-                icon: Icons.security_outlined,
-              ),
-              SizedBox(height: 8.h),
+            // ── Section 2: Tool Approval ──
+            _SettingsSection(
+              title: isZh ? '工具审批' : 'Tool Approval',
+              icon: Icons.security_outlined,
+              initiallyExpanded: false,
+              children: [
               Text(
                 isZh
                     ? '控制 AI 执行工具前是否需要用户确认'
@@ -438,7 +457,7 @@ class _MenuContent extends HookConsumerWidget {
 
               SizedBox(height: 20.h),
 
-              // Available tools info
+              // ── Tool Management ──
               _sectionHeader(
                 context,
                 zh: '可用工具列表',
@@ -446,21 +465,40 @@ class _MenuContent extends HookConsumerWidget {
                 icon: Icons.build_outlined,
               ),
               SizedBox(height: 8.h),
-              _infoRow(
-                context,
-                icon: Icons.info_outline,
-                iconColor: context.colorScheme.primary.withValues(alpha: 0.7),
-                label: isZh
-                    ? '以下工具将受审批设置影响'
-                    : 'The following tools are affected by approval settings',
-                detail: isZh
-                    ? '设置为"始终确认"时，AI调用任何工具都需要你手动批准'
-                    : 'When set to "Always", every tool call requires your manual approval',
+              Text(
+                isZh
+                    ? '启用或禁用 AI 可调用的工具，更改后下次会话生效'
+                    : 'Enable or disable tools that AI can call. Changes apply on next session.',
+                style: TextStyle(
+                  fontSize: 12.sp,
+                  color: context.theme.hintColor,
+                ),
               ),
+              SizedBox(height: 12.h),
 
-              SizedBox(height: 32.h),
-            ],
-          ),
+              if (toolDefinitions.isEmpty)
+                _infoRow(
+                  context,
+                  icon: Icons.info_outline,
+                  iconColor: context.colorScheme.primary.withValues(alpha: 0.7),
+                  label: isZh
+                      ? '当前配置下无可用工具'
+                      : 'No tools available for this configuration',
+                  detail: isZh
+                      ? '工具列表将在进入聊天后加载'
+                      : 'Tool list will load after entering chat',
+                )
+              else
+                _ToolList(
+                  configId: config.id,
+                  toolDefinitions: toolDefinitions,
+                  isSaving: isSaving,
+                ),
+
+              ],
+            ),
+            SizedBox(height: 32.h),
+          ],
         );
       },
     );
@@ -750,6 +788,368 @@ class _ModelListItem extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ToolList extends HookConsumerWidget {
+  const _ToolList({
+    required this.configId,
+    required this.toolDefinitions,
+    required this.isSaving,
+  });
+
+  final String configId;
+  final List<AiToolDefinition> toolDefinitions;
+  final ValueNotifier<bool> isSaving;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isZh = context.isZh;
+    final disabledTools =
+        ref.watch(disabledToolsStoreProvider)[configId] ?? <String>{};
+    final userRisky =
+        ref.watch(userRiskyToolsStoreProvider)[configId] ?? <String, bool>{};
+
+    return Container(
+      decoration: BoxDecoration(
+        color: context.isDark
+            ? Colors.white.withValues(alpha: 0.04)
+            : Colors.grey[100],
+        borderRadius: BorderRadius.circular(12.r),
+      ),
+      child: Column(
+        children: toolDefinitions.asMap().entries.map((entry) {
+          final index = entry.key;
+          final tool = entry.value;
+          final isLast = index == toolDefinitions.length - 1;
+          final isEnabled = !disabledTools.contains(tool.name);
+          // 危险判定：每个工具独立计算，用户明确选择完全覆盖系统默认。
+          // 之前用 "用户标记 || 系统默认" 的并集逻辑，导致系统默认危险的
+          // 工具（如 generate_so_hook）开关永远开启、点击无反应。
+          final isRisky = userRisky[tool.name] ?? (tool.isRisky == true);
+
+          return _ToolListItem(
+            tool: tool,
+            isEnabled: isEnabled,
+            isRisky: isRisky,
+            isLast: isLast,
+            onToggleEnabled: () async {
+              if (isSaving.value) return;
+              isSaving.value = true;
+              try {
+                await ref
+                    .read(disabledToolsStoreProvider.notifier)
+                    .toggleTool(configId, tool.name);
+                if (context.mounted) {
+                  ToastMessage.show(
+                    isZh
+                        ? '${tool.name} ${isEnabled ? "已禁用" : "已启用"}'
+                        : '${tool.name} ${isEnabled ? "disabled" : "enabled"}',
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ToastMessage.show(
+                    isZh ? '操作失败: $e' : 'Failed: $e',
+                  );
+                }
+              } finally {
+                if (context.mounted) {
+                  isSaving.value = false;
+                }
+              }
+            },
+            onToggleRisky: () async {
+              if (isSaving.value) return;
+              isSaving.value = true;
+              try {
+                // 写入明确的反向值，用户选择覆盖系统默认
+                await ref
+                    .read(userRiskyToolsStoreProvider.notifier)
+                    .setRisky(configId, tool.name, !isRisky);
+                if (context.mounted) {
+                  ToastMessage.show(
+                    isZh
+                        ? '${tool.name} ${isRisky ? "标记为安全" : "标记为危险"}'
+                        : '${tool.name} ${isRisky ? "marked safe" : "marked risky"}',
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ToastMessage.show(
+                    isZh ? '操作失败: $e' : 'Failed: $e',
+                  );
+                }
+              } finally {
+                if (context.mounted) {
+                  isSaving.value = false;
+                }
+              }
+            },
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _ToolListItem extends HookWidget {
+  const _ToolListItem({
+    required this.tool,
+    required this.isEnabled,
+    required this.isRisky,
+    required this.isLast,
+    required this.onToggleEnabled,
+    required this.onToggleRisky,
+  });
+
+  final AiToolDefinition tool;
+  final bool isEnabled;
+  final bool isRisky;
+  final bool isLast;
+  final VoidCallback onToggleEnabled;
+  final VoidCallback onToggleRisky;
+
+  @override
+  Widget build(BuildContext context) {
+    final isExpanded = useState(false);
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
+      decoration: BoxDecoration(
+        border: !isLast
+            ? Border(
+                bottom: BorderSide(
+                  color: context.isDark
+                      ? Colors.white.withValues(alpha: 0.06)
+                      : Colors.grey[300]!,
+                  width: 0.5,
+                ),
+              )
+            : null,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        tool.name,
+                        style: TextStyle(
+                          fontSize: 13.sp,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'monospace',
+                          color: isEnabled ? null : context.theme.hintColor,
+                        ),
+                      ),
+                    ),
+                    if (isRisky) ...[
+                      SizedBox(width: 6.w),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 5.w,
+                          vertical: 1.h,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(3.r),
+                          border: Border.all(
+                            color: Colors.orange.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Text('⚠', style: TextStyle(fontSize: 10.sp)),
+                      ),
+                    ],
+                  ],
+                ),
+                SizedBox(height: 2.h),
+                GestureDetector(
+                  onTap: () => isExpanded.value = !isExpanded.value,
+                  child: Text(
+                    context.isZh || tool.descriptionEn.isEmpty
+                        ? tool.description
+                        : tool.descriptionEn,
+                    maxLines: isExpanded.value ? null : 2,
+                    overflow:
+                        isExpanded.value ? TextOverflow.clip : TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.sp,
+                      color: isEnabled
+                          ? context.textTheme.bodySmall?.color
+                          : context.theme.hintColor.withValues(alpha: 0.6),
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: 8.w),
+          Column(
+            children: [
+              Text(
+                context.isZh ? '启用' : 'On',
+                style: TextStyle(fontSize: 9.sp, color: context.theme.hintColor),
+              ),
+              SizedBox(
+                height: 28.h,
+                child: Switch(
+                  value: isEnabled,
+                  onChanged: (_) => onToggleEnabled(),
+                  activeColor: context.colorScheme.primary,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(width: 4.w),
+          Column(
+            children: [
+              Text(
+                context.isZh ? '危险' : 'Risky',
+                style: TextStyle(fontSize: 9.sp, color: context.theme.hintColor),
+              ),
+              SizedBox(
+                height: 28.h,
+                child: Switch(
+                  value: isRisky,
+                  onChanged: (_) => onToggleRisky(),
+                  activeColor: Colors.orange,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 可折叠的设置分区，方便后续扩展更多功能
+class _SettingsSection extends StatefulWidget {
+  const _SettingsSection({
+    required this.title,
+    required this.icon,
+    required this.children,
+    this.initiallyExpanded = true,
+  });
+
+  final String title;
+  final IconData icon;
+  final List<Widget> children;
+  final bool initiallyExpanded;
+
+  @override
+  State<_SettingsSection> createState() => _SettingsSectionState();
+}
+
+class _SettingsSectionState extends State<_SettingsSection>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _expandAnimation;
+  bool _isExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isExpanded = widget.initiallyExpanded;
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 250),
+      vsync: this,
+    );
+    _expandAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    );
+    if (_isExpanded) _controller.value = 1.0;
+    _controller.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _isExpanded = !_isExpanded);
+    if (_isExpanded) {
+      _controller.forward();
+    } else {
+      _controller.reverse();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isZh = context.isZh;
+    return Container(
+      margin: EdgeInsets.only(bottom: 8.h),
+      decoration: BoxDecoration(
+        color: context.isDark
+            ? context.colorScheme.surfaceContainerLow
+            : Colors.white,
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(
+          color: context.isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : context.colorScheme.outlineVariant,
+        ),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: _toggle,
+            borderRadius: BorderRadius.circular(14.r),
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+              child: Row(
+                children: [
+                  Icon(widget.icon, size: 18.sp, color: context.colorScheme.primary),
+                  SizedBox(width: 10.w),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: TextStyle(
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w700,
+                        color: context.textTheme.titleMedium?.color,
+                      ),
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: _isExpanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 250),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 20.sp,
+                      color: context.theme.hintColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SizeTransition(
+            sizeFactor: _expandAnimation,
+            axisAlignment: -1.0,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(14.w, 0, 14.w, 12.h),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: widget.children,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

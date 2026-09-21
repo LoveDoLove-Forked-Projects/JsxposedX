@@ -535,7 +535,7 @@ class AiChatSessionController {
       );
       workingHistory = [...workingHistory, assistantMessage];
 
-      final needsApproval = _needsToolApproval(assistant.toolPolicy);
+      final needsApproval = _needsToolApproval(assistant.toolPolicy, assistantMessage);
       if (needsApproval) {
         _emit(
           _state.copyWith(
@@ -699,9 +699,22 @@ class AiChatSessionController {
     // 当前版本通过工具执行状态变更（preparing -> running -> succeeded/failed）来展示进度
   }
 
-  bool _needsToolApproval(AiToolPolicy toolPolicy) {
-    return toolPolicy.approvalMode == AiToolApprovalMode.always ||
-        (toolPolicy.approvalMode == AiToolApprovalMode.riskyOnly);
+  bool _needsToolApproval(
+    AiToolPolicy toolPolicy,
+    AiMessage assistantMessage,
+  ) {
+    if (toolPolicy.approvalMode == AiToolApprovalMode.never) return false;
+    if (toolPolicy.approvalMode == AiToolApprovalMode.always) return true;
+    // riskyOnly: 仅当消息中包含危险工具时才需要审批
+    // 优先使用用户自定义的危险工具列表，没有则用系统默认 isRisky 标记
+    final toolDefs = environment?.toolDefinitions ?? const [];
+    final riskyNames = toolDefs
+        .where((d) => d.isRisky == true)
+        .map((d) => d.name)
+        .toSet();
+    return assistantMessage.parts
+        .whereType<AiToolCallPart>()
+        .any((part) => riskyNames.contains(part.toolCall.name));
   }
 
   List<AiMessage> _createRejectedToolResults(

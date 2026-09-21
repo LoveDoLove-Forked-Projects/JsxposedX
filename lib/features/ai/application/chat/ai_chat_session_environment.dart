@@ -1,4 +1,5 @@
 import 'package:JsxposedX/features/ai/domain/models/ai_system_models.dart';
+import 'package:JsxposedX/features/ai/domain/models/ai_tool_definition.dart';
 import 'package:JsxposedX/features/ai/domain/ports/ai_tool_executor.dart';
 
 class AiChatSessionEnvironment {
@@ -9,6 +10,7 @@ class AiChatSessionEnvironment {
     required this.systemPrompt,
     this.tools = const [],
     this.toolExecutor,
+    this.toolDefinitions = const [],
   });
 
   final String id;
@@ -17,4 +19,5 @@ class AiChatSessionEnvironment {
   final String systemPrompt;
   final List<AiToolSpec> tools;
   final AiToolExecutor? toolExecutor;
+  final List<AiToolDefinition> toolDefinitions;
 }
