@@ -3,6 +3,7 @@ import 'package:JsxposedX/core/extensions/context_extensions.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/config/ai_config_query_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/runtime/ai_chat_runtime_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/states/ai_chat_session_view.dart';
+import 'package:JsxposedX/features/ai/presentation/widgets/ai_quick_settings_menu.dart';
 import 'package:JsxposedX/features/app/presentation/providers/app_query_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -199,6 +200,13 @@ class AiReverseHeader extends HookConsumerWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                _HeaderActionButton(
+                  icon: Icons.settings_rounded,
+                  tooltip: context.isZh ? '快捷设置' : 'Quick Settings',
+                  color: context.colorScheme.secondary,
+                  onTap: () => AiQuickSettingsMenu.show(context),
+                ),
+                SizedBox(width: 8.w),
                 _HeaderActionButton(
                   icon: Icons.add_comment_rounded,
                   tooltip: context.l10n.aiNewSession,
