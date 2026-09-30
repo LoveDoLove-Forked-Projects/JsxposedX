@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:JsxposedX/core/transport/jsxposed_protocol.dart';
 
 /// PC 端与手机端的连接状态
@@ -209,6 +210,7 @@ class DesktopConnectionNotifier extends Notifier<DesktopConnectionState> {
   StreamSubscription<dynamic>? _socketSubscription;
   Timer? _heartbeatTimer;
   String? _adbForwardSerial;
+  String? _adbPathCache;
   final Map<String, Completer<JsxposedMessage>> _pendingRequests = {};
 
   Stream<JsxposedMessage> get events => _eventController.stream;
@@ -229,7 +231,7 @@ class DesktopConnectionNotifier extends Notifier<DesktopConnectionState> {
 
   Future<void> scanAdbDevices() async {
     try {
-      final result = await Process.run('adb', ['devices', '-l']);
+      final result = await Process.run(_adbExecutable, ['devices', '-l']);
       if (result.exitCode != 0) {
         throw Exception(result.stderr.toString().trim());
       }
@@ -333,9 +335,10 @@ class DesktopConnectionNotifier extends Notifier<DesktopConnectionState> {
     List<String>? displayArguments,
   }) async {
     final visibleArguments = displayArguments ?? arguments;
-    final command = ['adb', ...visibleArguments].join(' ');
+    final executable = _adbExecutable;
+    final command = [executable, ...visibleArguments].join(' ');
     try {
-      final result = await Process.run('adb', arguments);
+      final result = await Process.run(executable, arguments);
       final commandResult = AdbCommandResult(
         command: command,
         exitCode: result.exitCode,
@@ -369,7 +372,7 @@ class DesktopConnectionNotifier extends Notifier<DesktopConnectionState> {
     }
 
     try {
-      final result = await Process.run('adb', [
+      final result = await Process.run(_adbExecutable, [
         '-s',
         serial,
         'forward',
@@ -842,13 +845,82 @@ class DesktopConnectionNotifier extends Notifier<DesktopConnectionState> {
     final serial = _adbForwardSerial;
     _adbForwardSerial = null;
     if (serial != null) {
-      await Process.run('adb', [
-        '-s',
-        serial,
-        'forward',
-        '--remove',
-        'tcp:8765',
-      ]);
+      try {
+        await Process.run(_adbExecutable, [
+          '-s',
+          serial,
+          'forward',
+          '--remove',
+          'tcp:8765',
+        ]);
+      } on ProcessException {
+        // adb 不可用时忽略清理失败，避免中断断开流程
+      }
     }
+  }
+
+  /// 解析 adb 可执行文件路径。
+  ///
+  /// 从 Finder / 资源管理器双击启动的 GUI 进程不会继承终端的环境变量，
+  /// 直接调用 `adb` 会因 PATH 缺失而失败，因此这里显式探测常见安装位置。
+  String get _adbExecutable {
+    final cached = _adbPathCache;
+    if (cached != null) return cached;
+
+    final exeDir = File(Platform.resolvedExecutable).parent.path;
+    final exeName = Platform.isWindows ? 'adb.exe' : 'adb';
+    final candidates = <String>[
+      // 随安装包内置的 platform-tools 优先，避免依赖用户本机是否装了 SDK
+      p.join(exeDir, 'platform-tools', exeName),
+      // macOS .app 布局：可执行文件在 Contents/MacOS，资源在 Contents/Resources
+      p.join(p.dirname(exeDir), 'Resources', 'platform-tools', exeName),
+    ];
+
+    for (final key in const ['ANDROID_HOME', 'ANDROID_SDK_ROOT']) {
+      final root = Platform.environment[key];
+      if (root != null && root.isNotEmpty) {
+        candidates.add(p.join(root, 'platform-tools', exeName));
+      }
+    }
+
+    final home =
+        Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+    if (home != null && home.isNotEmpty) {
+      candidates
+        ..add(
+          p.join(home, 'Library', 'Android', 'sdk', 'platform-tools', exeName),
+        )
+        ..add(p.join(home, 'Android', 'Sdk', 'platform-tools', exeName))
+        ..add(
+          p.join(
+            home,
+            'AppData',
+            'Local',
+            'Android',
+            'Sdk',
+            'platform-tools',
+            exeName,
+          ),
+        );
+    }
+
+    if (Platform.isMacOS) {
+      candidates
+        ..add('/usr/local/share/android-sdk/platform-tools/$exeName')
+        ..add(
+          '/opt/homebrew/share/android-commandlinetools/platform-tools/$exeName',
+        )
+        ..add('/opt/homebrew/bin/$exeName');
+    }
+
+    for (final candidate in candidates) {
+      if (File(candidate).existsSync()) {
+        _adbPathCache = candidate;
+        return candidate;
+      }
+    }
+
+    // 均未命中时交回 PATH 解析，且不缓存，便于安装 adb 后无需重启即可生效
+    return exeName;
   }
 }

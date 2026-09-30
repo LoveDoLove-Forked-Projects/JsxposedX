@@ -257,6 +257,39 @@ jobs:
         if: matrix.platform == 'macos'
         run: flutter build macos --release
 
+      - name: Bundle adb (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          curl -fsSL -o /tmp/pt.zip https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+          unzip -q /tmp/pt.zip -d /tmp/pt
+          mkdir -p build/linux/x64/release/bundle/platform-tools
+          cp -a /tmp/pt/platform-tools/. build/linux/x64/release/bundle/platform-tools/
+          chmod +x build/linux/x64/release/bundle/platform-tools/adb
+
+      - name: Bundle adb (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://dl.google.com/android/repository/platform-tools-latest-windows.zip" -OutFile pt.zip
+          Expand-Archive -Path pt.zip -DestinationPath pt -Force
+          $dest = "build/windows/x64/runner/Release/platform-tools"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item -Path "pt/platform-tools/*" -Destination $dest -Recurse -Force
+
+      - name: Bundle adb (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          curl -fsSL -o /tmp/pt.zip https://dl.google.com/android/repository/platform-tools-latest-darwin.zip
+          unzip -q /tmp/pt.zip -d /tmp/pt
+          APP="build/macos/Build/Products/Release/JsxposedX.app"
+          mkdir -p "$APP/Contents/Resources/platform-tools"
+          cp -a /tmp/pt/platform-tools/. "$APP/Contents/Resources/platform-tools/"
+          chmod +x "$APP/Contents/Resources/platform-tools/adb"
+          # 注入外部可执行文件会破坏原有签名，必须重签，否则系统会拒绝执行 adb
+          find "$APP/Contents/Resources/platform-tools" -type f -exec codesign --force --sign - {} \;
+          codesign --force --deep --sign - --entitlements macos/Runner/Release.entitlements "$APP"
+          codesign --verify --deep --strict "$APP" || echo "::warning::codesign verify reported issues"
+
       - name: Package Linux (tar.gz)
         if: matrix.platform == 'linux'
         run: |
