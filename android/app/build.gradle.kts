@@ -144,6 +144,10 @@ dependencies {
         exclude(group = "com.alibaba.fastjson2", module = "fastjson2")
     }
 
+    // WebSocket server for desktop bridge
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.nanohttpd:nanohttpd-websocket:2.3.1")
+
     // Pure QuickJS Wrapper for Android
     implementation("wang.harlon.quickjs:wrapper-android:3.2.0")
 

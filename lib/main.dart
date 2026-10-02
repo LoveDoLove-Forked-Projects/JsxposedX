@@ -4,6 +4,7 @@ import 'package:JsxposedX/common/pages/toast.dart';
 import 'package:JsxposedX/common/widgets/app_bootstrap.dart';
 import 'package:JsxposedX/core/providers/locale_provider.dart';
 import 'package:JsxposedX/core/transport/android_desktop_bridge_server.dart';
+import 'package:JsxposedX/core/transport/desktop_bridge_handler.dart';
 import 'package:JsxposedX/core/providers/theme_provider.dart';
 import 'package:JsxposedX/core/routes/app_router.dart';
 import 'package:JsxposedX/core/services/desktop_console_service.dart';
@@ -13,6 +14,7 @@ import 'package:JsxposedX/features/overlay_window/presentation/pages/overlay_sub
 import 'package:JsxposedX/features/overlay_window/presentation/providers/overlay_window_action_provider.dart';
 import 'package:JsxposedX/features/ai/presentation/providers/system/ai_system_providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -23,8 +25,33 @@ Future<void> main() async {
     runApp(const ProviderScope(child: DesktopApp()));
     return;
   }
-  unawaited(AndroidDesktopBridgeServer.instance.start());
-  runApp(const ProviderScope(child: MainApp()));
+  
+  // Android 端：注册桌面桥接处理器，供前台服务调用
+  // 注意：WebSocket 服务器现在由前台服务中的原生实现托管，不再在主 Activity 中启动 Dart 版本
+  final container = ProviderContainer();
+  setupDesktopBridgeHandler(container);
+  // 监听原生前台服务上报的连接数，首页据此显示电脑端连接状态
+  const desktopConnectionChannel = MethodChannel('com.jsxposed.x/desktop_connection');
+  desktopConnectionChannel.setMethodCallHandler((call) async {
+    if (call.method == 'onConnectionCountChange') {
+      AndroidDesktopBridgeServer.instance.clientCount.value =
+          call.arguments as int? ?? 0;
+    }
+  });
+  
+  runApp(UncontrolledProviderScope(
+    container: container,
+    child: const MainApp(),
+  ));
+}
+
+/// 后台服务专用入口：只注册桥接处理器，不启动 UI
+@pragma('vm:entry-point')
+Future<void> backgroundServiceEntry() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final container = ProviderContainer();
+  setupDesktopBridgeHandler(container);
+  debugPrint('[DesktopBridge] Background service handler initialized');
 }
 
 @pragma('vm:entry-point')

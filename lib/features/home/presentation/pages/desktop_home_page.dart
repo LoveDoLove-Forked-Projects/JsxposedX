@@ -394,8 +394,10 @@ class _DesktopSettingsView extends HookConsumerWidget {
   ) {
     final l10n = context.l10n;
     return [
-      Text(l10n.desktopSettingsCommunity,
-          style: Theme.of(context).textTheme.titleSmall),
+      Text(
+        l10n.desktopSettingsCommunity,
+        style: Theme.of(context).textTheme.titleSmall,
+      ),
       const SizedBox(height: 8),
       Material(
         color: colorScheme.surfaceContainerLow,
@@ -439,14 +441,17 @@ class _DesktopSettingsView extends HookConsumerWidget {
               leading: const Icon(Icons.bug_report_outlined),
               title: Text(l10n.desktopSettingsTargetRange),
               trailing: const Icon(Icons.open_in_new),
-              onTap: () => UrlHelper.openUrlInBrowser(url: _promoTargetRangeUrl),
+              onTap: () =>
+                  UrlHelper.openUrlInBrowser(url: _promoTargetRangeUrl),
             ),
           ],
         ),
       ),
       const SizedBox(height: 24),
-      Text(l10n.desktopSettingsFollowAuthor,
-          style: Theme.of(context).textTheme.titleSmall),
+      Text(
+        l10n.desktopSettingsFollowAuthor,
+        style: Theme.of(context).textTheme.titleSmall,
+      ),
       const SizedBox(height: 8),
       Material(
         color: colorScheme.surfaceContainerLow,
@@ -486,8 +491,10 @@ class _DesktopSettingsView extends HookConsumerWidget {
         ),
       ),
       const SizedBox(height: 24),
-      Text(l10n.desktopSettingsAbout,
-          style: Theme.of(context).textTheme.titleSmall),
+      Text(
+        l10n.desktopSettingsAbout,
+        style: Theme.of(context).textTheme.titleSmall,
+      ),
       const SizedBox(height: 8),
       Material(
         color: colorScheme.surfaceContainerLow,
@@ -652,11 +659,10 @@ class _DesktopWorkbenchView extends HookConsumerWidget {
                   width: sideWidth,
                   minWidth: _minSidebarWidth,
                   maxWidth: maxSidebarWidth,
-                  onResize: (value) =>
-                      sidebarWidth.value = value.clamp(
-                        _minSidebarWidth,
-                        maxSidebarWidth,
-                      ),
+                  onResize: (value) => sidebarWidth.value = value.clamp(
+                    _minSidebarWidth,
+                    maxSidebarWidth,
+                  ),
                   onReset: () => sidebarWidth.value = _defaultSidebarWidth,
                 ),
               ],
@@ -673,11 +679,10 @@ class _DesktopWorkbenchView extends HookConsumerWidget {
                         height: panelHeight,
                         minHeight: _minOutputHeight,
                         maxHeight: maxOutputHeight,
-                        onResize: (value) =>
-                            outputHeight.value = value.clamp(
-                              _minOutputHeight,
-                              maxOutputHeight,
-                            ),
+                        onResize: (value) => outputHeight.value = value.clamp(
+                          _minOutputHeight,
+                          maxOutputHeight,
+                        ),
                         onReset: () =>
                             outputHeight.value = _defaultOutputHeight,
                       ),
@@ -781,7 +786,17 @@ class _SelectedScriptNotifier extends Notifier<DesktopScriptSelection?> {
   @override
   DesktopScriptSelection? build() => null;
 
-  set selection(DesktopScriptSelection? value) => state = value;
+  set selection(DesktopScriptSelection? value) {
+    state = value;
+    // 切换项目时自动启动控制台（后台原生实现，划掉应用后依然可用）
+    if (value != null) {
+      final logs = ref.read(desktopLogsProvider.notifier);
+      // 避免重复启动（已在运行且目标包名匹配则跳过）
+      if (logs.state.state.targetPackage != value.packageName) {
+        logs.start(value.packageName);
+      }
+    }
+  }
 }
 
 final _selectedScriptProvider =
@@ -795,9 +810,6 @@ class _ProjectExplorer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final connection = ref.watch(desktopConnectionProvider);
-    final revision = ref
-        .watch(desktopConnectionProvider.notifier)
-        .contextRevision;
     final selected = ref.watch(_selectedScriptProvider);
 
     return Column(
@@ -816,15 +828,12 @@ class _ProjectExplorer extends ConsumerWidget {
                   icon: Icons.link_off,
                   message: context.l10n.desktopEditorConnectDevice,
                 )
-              : ValueListenableBuilder<int>(
-                  valueListenable: revision,
-                  builder: (context, _, _) => _ProjectTree(
-                    connection: connection,
-                    selected: selected,
-                    onSelect: (selection) =>
-                        ref.read(_selectedScriptProvider.notifier).selection =
-                            selection,
-                  ),
+              : _ProjectTree(
+                  connection: connection,
+                  selected: selected,
+                  onSelect: (selection) =>
+                      ref.read(_selectedScriptProvider.notifier).selection =
+                          selection,
                 ),
         ),
       ],
@@ -859,8 +868,9 @@ class _ExplorerPlaceholder extends StatelessWidget {
 }
 
 /// 项目（包名目录）二级树，脚本按 Frida / Xposed 分组
-class _ProjectTree extends ConsumerStatefulWidget {
+class _ProjectTree extends HookConsumerWidget {
   const _ProjectTree({
+    super.key,
     required this.connection,
     required this.selected,
     required this.onSelect,
@@ -870,25 +880,7 @@ class _ProjectTree extends ConsumerStatefulWidget {
   final DesktopScriptSelection? selected;
   final ValueChanged<DesktopScriptSelection> onSelect;
 
-  @override
-  ConsumerState<_ProjectTree> createState() => _ProjectTreeState();
-}
-
-class _ProjectTreeState extends ConsumerState<_ProjectTree> {
-  late Future<_ExplorerData> _future;
-
-  // 折叠状态提升到列表层：整棵树打平为行数据交给 ListView.builder 按需构建，
-  // key 分别为包名与「包名:来源」
-  final _collapsedProjects = <String>{};
-  final _collapsedGroups = <String>{};
-
-  @override
-  void initState() {
-    super.initState();
-    _future = _load();
-  }
-
-  Future<_ExplorerData> _load() async {
+  Future<_ExplorerData> _load(WidgetRef ref) async {
     final notifier = ref.read(desktopConnectionProvider.notifier);
     final projects = await notifier.listProjects();
     final scripts = <String, Map<String, List<DesktopScript>>>{};
@@ -906,9 +898,13 @@ class _ProjectTreeState extends ConsumerState<_ProjectTree> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final collapsedProjects = useState(<String>{});
+    final collapsedGroups = useState(<String>{});
+    // 折叠用 useState 保持；只在挂载时拉取一次（脚本开关只影响单个脚本，不重载整树）
+    final future = useMemoized(() => _load(ref), const []);
     return FutureBuilder<_ExplorerData>(
-      future: _future,
+      future: future,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return _ExplorerPlaceholder(
@@ -932,40 +928,50 @@ class _ProjectTreeState extends ConsumerState<_ProjectTree> {
             message: context.l10n.desktopExplorerDescription,
           );
         }
-        final rows = _flatten(snapshot.data!);
+        final rows = _flatten(
+          data,
+          collapsedProjects.value,
+          collapsedGroups.value,
+        );
         // 懒加载：行 widget 由 itemBuilder 按可视范围按需构建，
         // 大量脚本时只渲染屏幕内的列表项
         return ListView.builder(
           itemCount: rows.length,
           itemBuilder: (context, index) {
-            final selected = widget.selected;
+            final selected = this.selected;
             switch (rows[index]) {
               case _ProjectRow(:final project):
                 return _ProjectNode(
                   project: project,
-                  expanded: !_collapsedProjects.contains(project.packageName),
-                  onToggle: () => setState(() {
-                    if (_collapsedProjects.contains(project.packageName)) {
-                      _collapsedProjects.remove(project.packageName);
+                  expanded: !collapsedProjects.value.contains(
+                    project.packageName,
+                  ),
+                  onToggle: () {
+                    final next = {...collapsedProjects.value};
+                    if (next.contains(project.packageName)) {
+                      next.remove(project.packageName);
                     } else {
-                      _collapsedProjects.add(project.packageName);
+                      next.add(project.packageName);
                     }
-                  }),
+                    collapsedProjects.value = next;
+                  },
                 );
               case _GroupRow(:final project, :final source):
                 return _ScriptGroup(
                   source: source,
-                  expanded: !_collapsedGroups.contains(
+                  expanded: !collapsedGroups.value.contains(
                     '${project.packageName}:$source',
                   ),
-                  onToggle: () => setState(() {
+                  onToggle: () {
                     final key = '${project.packageName}:$source';
-                    if (_collapsedGroups.contains(key)) {
-                      _collapsedGroups.remove(key);
+                    final next = {...collapsedGroups.value};
+                    if (next.contains(key)) {
+                      next.remove(key);
                     } else {
-                      _collapsedGroups.add(key);
+                      next.add(key);
                     }
-                  }),
+                    collapsedGroups.value = next;
+                  },
                 );
               case _ScriptRow(:final project, :final source, :final script):
                 return _ScriptNode(
@@ -976,7 +982,7 @@ class _ProjectTreeState extends ConsumerState<_ProjectTree> {
                       selected?.packageName == project.packageName &&
                       selected?.source == source &&
                       selected?.localPath == script.localPath,
-                  onSelect: widget.onSelect,
+                  onSelect: onSelect,
                 );
               case _GroupEmptyRow():
                 return Padding(
@@ -997,17 +1003,21 @@ class _ProjectTreeState extends ConsumerState<_ProjectTree> {
   }
 
   /// 把「项目 → 分组 → 脚本」树打平为行数据，折叠的子树直接跳过不产生行
-  List<_ExplorerRow> _flatten(_ExplorerData data) {
+  List<_ExplorerRow> _flatten(
+    _ExplorerData data,
+    Set<String> collapsedProjects,
+    Set<String> collapsedGroups,
+  ) {
     final rows = <_ExplorerRow>[];
     for (final project in data.projects) {
       rows.add(_ProjectRow(project));
-      if (_collapsedProjects.contains(project.packageName)) continue;
+      if (collapsedProjects.contains(project.packageName)) continue;
       final bySource =
           data.scripts[project.packageName] ??
           const <String, List<DesktopScript>>{};
       for (final source in JsxposedScriptSource.values) {
         rows.add(_GroupRow(project, source));
-        if (_collapsedGroups.contains('${project.packageName}:$source')) {
+        if (collapsedGroups.contains('${project.packageName}:$source')) {
           continue;
         }
         final scripts = bySource[source] ?? const <DesktopScript>[];
@@ -1160,7 +1170,16 @@ class _ScriptGroup extends StatelessWidget {
   }
 }
 
-class _ScriptNode extends StatelessWidget {
+/// 开关启停状态的内存缓存，用于左侧脚本列表与开关联动（开启→绿色文字）
+final _scriptEnabledOverrides = NotifierProvider<_ScriptEnabledOverrides, Map<String, bool>>(_ScriptEnabledOverrides.new);
+
+class _ScriptEnabledOverrides extends Notifier<Map<String, bool>> {
+  @override
+  Map<String, bool> build() => const {};
+  void set(String key, bool value) => state = {...state, key: value};
+}
+
+class _ScriptNode extends ConsumerWidget {
   const _ScriptNode({
     required this.packageName,
     required this.source,
@@ -1176,8 +1195,11 @@ class _ScriptNode extends StatelessWidget {
   final ValueChanged<DesktopScriptSelection> onSelect;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colorScheme;
+    final overrides = ref.watch(_scriptEnabledOverrides);
+    final key = '$packageName|$source|${script.localPath}';
+    final enabled = overrides[key] ?? script.enabled;
     return ListTile(
       dense: true,
       visualDensity: VisualDensity.compact,
@@ -1191,7 +1213,10 @@ class _ScriptNode extends StatelessWidget {
           script.name,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 12),
+          style: TextStyle(
+            fontSize: 12,
+            color: enabled ? const Color(0xFF4CAF50) : null,
+          ),
         ),
       ),
       onTap: () => onSelect(
@@ -1404,9 +1429,12 @@ class _EditorWorkspaceState extends ConsumerState<_EditorWorkspace> {
       });
       return;
     }
+    // 优先使用最近开关确认后的缓存值（设备真实状态），避免旧 listScripts 覆盖
+    final overrides = ref.read(_scriptEnabledOverrides);
+    final key = '${selection.packageName}|${selection.source}|${selection.localPath}';
     setState(() {
       _loaded = selection;
-      _scriptEnabled = selection.enabled;
+      _scriptEnabled = overrides[key] ?? selection.enabled;
       _loading = true;
       _error = null;
     });
@@ -1478,8 +1506,13 @@ class _EditorWorkspaceState extends ConsumerState<_EditorWorkspace> {
         enabled: enabled,
       );
       if (!mounted) return;
+      // 设备端已确认，校正本地状态（与乐观值一致）
       setState(() => _scriptEnabled = enabled);
-      notifier.contextRevision.value++;
+      // 联动左侧脚本列表（开启→绿色文字）
+      ref.read(_scriptEnabledOverrides.notifier).set(
+            '${selection.packageName}|${selection.source}|${selection.localPath}',
+            enabled,
+          );
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text('$error')));
     } finally {
@@ -1550,11 +1583,18 @@ class _EditorWorkspaceState extends ConsumerState<_EditorWorkspace> {
                               ),
                         ),
                       ),
-                      Switch(
-                        value: _scriptEnabled,
-                        onChanged: busy || _togglingScript
-                            ? null
-                            : _toggleScriptEnabled,
+                      StatefulBuilder(
+                        builder: (context, setMenuState) => Switch(
+                          value: _scriptEnabled,
+                          onChanged: busy || _togglingScript
+                              ? null
+                              : (value) {
+                                  // 点击即本地翻转（菜单内即时显示），后台再同步设备
+                                  setState(() => _scriptEnabled = value);
+                                  setMenuState(() {});
+                                  _toggleScriptEnabled(value);
+                                },
+                        ),
                       ),
                     ],
                   ),
@@ -1575,11 +1615,17 @@ class _EditorWorkspaceState extends ConsumerState<_EditorWorkspace> {
                                 ),
                           ),
                         ),
-                        Switch(
-                          value: _restartApp,
-                          onChanged: busy
-                              ? null
-                              : (value) => setState(() => _restartApp = value),
+                        StatefulBuilder(
+                          builder: (context, setMenuState) => Switch(
+                            value: _restartApp,
+                            onChanged: busy
+                                ? null
+                                : (value) {
+                                    // 点击即本地翻转（菜单内即时显示）
+                                    setState(() => _restartApp = value);
+                                    setMenuState(() {});
+                                  },
+                          ),
                         ),
                       ],
                     ),
@@ -1790,10 +1836,13 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
   late final Terminal _shellTerminal;
   StreamSubscription<JsxposedMessage>? _shellEventsSub;
   String _shellInput = "";
+
   /// 命令行提示符里的主机名，连接设备后替换为设备型号
   String _promptHost = 'device';
+
   /// 常驻会话的当前目录，由哨兵回传，cd 之后提示符随之变化
   String _shellCwd = '~';
+
   /// 尚未写入终端的输出，用于跨分片识别哨兵行
   String _shellPending = '';
   bool _shellSessionOpen = false;
@@ -1810,10 +1859,7 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
   @override
   void initState() {
     super.initState();
-    _shellTerminal = Terminal(
-      maxLines: 10000,
-      onOutput: _onShellInput,
-    );
+    _shellTerminal = Terminal(maxLines: 10000, onOutput: _onShellInput);
     _promptHost = _hostFromState(ref.read(desktopConnectionProvider));
     _shellTerminal.write(_shellPrompt);
     // 会话输出由设备端事件推送，这里只负责落到终端缓冲区
@@ -1835,9 +1881,7 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
         _shellInput = '';
         if (!mounted) return;
         _shellTerminal.write('\r\x1b[K');
-        _shellTerminal.write(
-          '${context.l10n.desktopShellDisconnected}\r\n',
-        );
+        _shellTerminal.write('${context.l10n.desktopShellDisconnected}\r\n');
         _writeShellPrompt();
         return;
       }
@@ -1855,9 +1899,7 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
       if (previous?.entries.length == next.entries.length) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!_scrollController.hasClients) return;
-        _scrollController.jumpTo(
-          _scrollController.position.maxScrollExtent,
-        );
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       });
     });
   }
@@ -2025,9 +2067,7 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
           _shellRunning = false;
           _writeShellPrompt();
         }
-        _shellTerminal.write(
-          '${context.l10n.desktopShellSessionClosed}\r\n',
-        );
+        _shellTerminal.write('${context.l10n.desktopShellSessionClosed}\r\n');
     }
   }
 
@@ -2059,9 +2099,7 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
   /// 哨兵回传格式为「退出码|当前目录」
   void _settleShellCommand(String payload) {
     final separator = payload.indexOf('|');
-    final exitCode = separator < 0
-        ? payload
-        : payload.substring(0, separator);
+    final exitCode = separator < 0 ? payload : payload.substring(0, separator);
     final cwd = separator < 0 ? '' : payload.substring(separator + 1).trim();
     if (cwd.isNotEmpty) _shellCwd = cwd;
     _shellRunning = false;
@@ -2084,9 +2122,7 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
 
     final filtered = [
       for (final entry in mirror.entries)
-        if (_sourceFilter == null &&
-            _levelFilter == null &&
-            !matcher.isActive)
+        if (_sourceFilter == null && _levelFilter == null && !matcher.isActive)
           entry
         else if (_matchesEntry(entry, matcher))
           entry,
@@ -2133,7 +2169,8 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
               showHistory: _showHistory,
               searchController: _searchController,
               onSearchChanged: _onSearchChanged,
-              onToggleRegex: () => setState(() => _regexEnabled = !_regexEnabled),
+              onToggleRegex: () =>
+                  setState(() => _regexEnabled = !_regexEnabled),
               onToggleCase: () =>
                   setState(() => _caseSensitive = !_caseSensitive),
               onToggleAutoScroll: () => ref
@@ -2161,17 +2198,23 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
             _ConsoleFilterRow(
               sourceFilter: _sourceFilter,
               levelFilter: _levelFilter,
-              onSourceChanged: (value) => setState(() => _sourceFilter = value),
-              onLevelChanged: (value) => setState(() => _levelFilter = value),
+              onSourceChanged: (value) {
+                setState(() => _sourceFilter = value);
+                // 同步到设备端，让原生控制台过滤（划掉应用后也能生效）
+                ref.read(desktopLogsProvider.notifier).setSource(value ?? '');
+              },
+              onLevelChanged: (value) {
+                setState(() => _levelFilter = value);
+                // 同步到设备端，让原生控制台过滤（划掉应用后也能生效）
+                ref.read(desktopLogsProvider.notifier).setLevel(value ?? 'V');
+              },
             ),
             Divider(
               height: 1,
               thickness: 0.4,
               color: colors.outlineVariant.withValues(alpha: 0.6),
             ),
-            Expanded(
-              child: widget.expanded ? list : const SizedBox.shrink(),
-            ),
+            Expanded(child: widget.expanded ? list : const SizedBox.shrink()),
           ] else
             Expanded(
               child: _ShellTerminal(
@@ -2229,9 +2272,7 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
     if (entries.isEmpty) {
       return _ConsoleEmptyState(
         isFiltered: hasFilter,
-        message: hasFilter
-            ? context.l10n.noLogsFiltered
-            : context.l10n.noLogs,
+        message: hasFilter ? context.l10n.noLogsFiltered : context.l10n.noLogs,
       );
     }
     return ListView.builder(
@@ -2297,9 +2338,7 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
           return _PersistedLogRow(log: historyEntries[index - 1]);
         }
         if (index == historyEnd) {
-          return _LiveSectionDivider(
-            label: context.l10n.consoleLiveBelow,
-          );
+          return _LiveSectionDivider(label: context.l10n.consoleLiveBelow);
         }
         return _LogRow(
           entry: liveEntries[index - historyEnd - 1],
@@ -2405,7 +2444,8 @@ class _SearchMatcher {
   final bool regexValid;
   final RegExp? _pattern;
 
-  bool get isActive => regex ? regexValid && needle.isNotEmpty : needle.isNotEmpty;
+  bool get isActive =>
+      regex ? regexValid && needle.isNotEmpty : needle.isNotEmpty;
 
   static bool _checkRegex(String query, bool regex, bool caseSensitive) {
     if (!regex || query.isEmpty) return true;
@@ -2756,10 +2796,7 @@ class _MenuRow extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 12,
-            color: context.colorScheme.onSurface,
-          ),
+          style: TextStyle(fontSize: 12, color: context.colorScheme.onSurface),
         ),
       ],
     );
@@ -2847,7 +2884,14 @@ class _ConsoleFilterRow extends StatelessWidget {
     required this.onLevelChanged,
   });
 
-  static const _kSources = ['session', 'frida', 'xposed', 'app', 'framework', 'system'];
+  static const _kSources = [
+    'session',
+    'frida',
+    'xposed',
+    'app',
+    'framework',
+    'system',
+  ];
   static const _kLevels = ['D', 'I', 'W', 'E'];
 
   final String? sourceFilter;
@@ -2855,46 +2899,56 @@ class _ConsoleFilterRow extends StatelessWidget {
   final ValueChanged<String?> onSourceChanged;
   final ValueChanged<String?> onLevelChanged;
 
-  String _sourceLabel(BuildContext context, String source) =>
-      switch (source) {
-        'session' => context.l10n.consoleSourceSession,
-        'frida' => context.l10n.consoleSourceFrida,
-        'xposed' => context.l10n.consoleSourceXposed,
-        'app' => context.l10n.consoleSourceApp,
-        'framework' => context.l10n.consoleSourceCore,
-        _ => context.l10n.consoleSourceSystem,
-      };
+  String _sourceLabel(BuildContext context, String source) => switch (source) {
+    'session' => context.l10n.consoleSourceSession,
+    'frida' => context.l10n.consoleSourceFrida,
+    'xposed' => context.l10n.consoleSourceXposed,
+    'app' => context.l10n.consoleSourceApp,
+    'framework' => context.l10n.consoleSourceCore,
+    _ => context.l10n.consoleSourceSystem,
+  };
 
-  String _levelLabel(BuildContext context, String level) =>
-      switch (level) {
-        'D' => context.l10n.consoleLevelDebug,
-        'I' => context.l10n.consoleLevelInfo,
-        'W' => context.l10n.consoleLevelWarn,
-        _ => context.l10n.consoleLevelError,
-      };
+  String _levelLabel(BuildContext context, String level) => level;
+
+  Color _getLevelColor(String level) => switch (level) {
+    'D' => Colors.blue,
+    'I' => Colors.green,
+    'W' => Colors.orange,
+    'E' => Colors.red,
+    _ => Colors.grey,
+  };
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colorScheme;
     return Container(
-      height: 32,
-      color: context.colorScheme.surfaceContainerLowest,
+      height: 36,
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        border: Border(
+          top: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.5)),
+          bottom: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.5)),
+        ),
+      ),
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         children: [
           _TagChip(
             label: context.l10n.consoleAll,
             selected: sourceFilter == null && levelFilter == null,
-            onTap: () => onSourceChanged(null),
+            onTap: () {
+              onSourceChanged(null);
+              onLevelChanged(null);
+            },
           ),
           for (final source in _kSources) ...[
             const SizedBox(width: 6),
             _TagChip(
               label: _sourceLabel(context, source),
               selected: sourceFilter == source,
-              onTap: () => onSourceChanged(
-                sourceFilter == source ? null : source,
-              ),
+              onTap: () =>
+                  onSourceChanged(sourceFilter == source ? null : source),
             ),
           ],
           const SizedBox(width: 8),
@@ -2904,9 +2958,8 @@ class _ConsoleFilterRow extends StatelessWidget {
             _TagChip(
               label: _levelLabel(context, level),
               selected: levelFilter == level,
-              onTap: () => onLevelChanged(
-                levelFilter == level ? null : level,
-              ),
+              onTap: () => onLevelChanged(levelFilter == level ? null : level),
+              color: _getLevelColor(level),
             ),
             const SizedBox(width: 6),
           ],
@@ -2921,14 +2974,17 @@ class _TagChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.color,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
+    final chipColor = color ?? context.colorScheme.primary;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
@@ -2937,13 +2993,13 @@ class _TagChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
           color: selected
-              ? context.colorScheme.primary.withValues(alpha: 0.10)
+              ? chipColor.withValues(alpha: 0.10)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: selected
-                ? context.colorScheme.primary.withValues(alpha: 0.32)
-                : context.colorScheme.outlineVariant,
+                ? chipColor.withValues(alpha: 0.32)
+                : (color != null ? chipColor.withValues(alpha: 0.24) : context.colorScheme.outlineVariant),
             width: 0.8,
           ),
         ),
@@ -2951,9 +3007,9 @@ class _TagChip extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 10,
-            color: selected
+            color: color != null ? chipColor : (selected
                 ? context.colorScheme.primary
-                : context.colorScheme.onSurfaceVariant,
+                : context.colorScheme.onSurfaceVariant),
             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
@@ -2979,7 +3035,9 @@ class _ConsoleEmptyState extends StatelessWidget {
             Icon(
               isFiltered ? Icons.filter_list_off : Icons.terminal_rounded,
               size: 28,
-              color: context.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+              color: context.colorScheme.onSurfaceVariant.withValues(
+                alpha: 0.4,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -3034,9 +3092,7 @@ class _ConsoleTabBar extends StatelessWidget {
               Icon(
                 icon,
                 size: 15,
-                color: selected
-                    ? colors.primary
-                    : colors.onSurfaceVariant,
+                color: selected ? colors.primary : colors.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
               Text(
@@ -3359,7 +3415,10 @@ class _LiveSectionDivider extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Divider(color: context.colorScheme.outlineVariant, height: 1),
+            child: Divider(
+              color: context.colorScheme.outlineVariant,
+              height: 1,
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -3373,7 +3432,10 @@ class _LiveSectionDivider extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Divider(color: context.colorScheme.outlineVariant, height: 1),
+            child: Divider(
+              color: context.colorScheme.outlineVariant,
+              height: 1,
+            ),
           ),
         ],
       ),
@@ -3408,9 +3470,7 @@ class _HistoryLoadOlderButton extends StatelessWidget {
             : TextButton(
                 onPressed: hasMore ? onTap : null,
                 child: Text(
-                  error == null
-                      ? context.l10n.consoleLoadOlder
-                      : '$error',
+                  error == null ? context.l10n.consoleLoadOlder : '$error',
                   style: const TextStyle(fontSize: 11),
                 ),
               ),

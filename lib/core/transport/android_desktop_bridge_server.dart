@@ -297,6 +297,20 @@ class AndroidDesktopBridgeServer {
     }
   }
 
+  /// 供原生层调用的请求处理入口
+  Future<Map<String, dynamic>> handleRequestFromNative(
+    String method,
+    Map<String, dynamic>? params,
+  ) async {
+    final request = JsxposedMessage(
+      type: 'request',
+      id: 'native-${DateTime.now().millisecondsSinceEpoch}',
+      method: method,
+      params: params,
+    );
+    return _route(request);
+  }
+
   /// 项目即手机端以包名命名的脚本目录，脚本本体与启停状态都由手机端维护
   Future<Map<String, dynamic>> _listProjects() async {
     final projects = await _projectNative.getProjects();

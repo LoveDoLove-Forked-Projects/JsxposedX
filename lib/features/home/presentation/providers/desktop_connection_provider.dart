@@ -61,6 +61,7 @@ class DesktopAdbDevice {
   final String? model;
 
   bool get isAuthorized => state == 'device';
+
   String get displayName => model == null ? serial : '$model ($serial)';
 }
 
@@ -166,6 +167,7 @@ class DesktopConnectionState {
   final JsxposedMessage? lastResponse;
 
   bool get isConnected => status == DesktopConnectionStatus.connected;
+
   bool get isConnecting => status == DesktopConnectionStatus.connecting;
 
   DesktopConnectionState copyWith({
@@ -402,10 +404,7 @@ class DesktopConnectionNotifier extends Notifier<DesktopConnectionState> {
         .where((device) => device.serial == state.selectedAdbSerial)
         .firstOrNull;
     final target = preferred ?? authorized.first;
-    state = state.copyWith(
-      selectedAdbSerial: target.serial,
-      clearError: true,
-    );
+    state = state.copyWith(selectedAdbSerial: target.serial, clearError: true);
     await connectAdb();
   }
 
@@ -563,6 +562,24 @@ class DesktopConnectionNotifier extends Notifier<DesktopConnectionState> {
     );
   }
 
+  /// 查询单个脚本在设备端的启停状态（开关状态真源在设备端）
+  Future<bool> getScriptEnabled({
+    required String packageName,
+    required String source,
+    required String localPath,
+  }) async {
+    final response = await request(
+      JsxposedMethod.scriptGetEnabled,
+      params: {
+        'packageName': packageName,
+        'source': source,
+        'localPath': localPath,
+      },
+    );
+    final result = _resultMap(response);
+    return result['enabled'] as bool? ?? false;
+  }
+
   /// 在设备端执行 shell 命令，默认以 su（root）运行
   Future<DesktopShellResult> execShell({
     required String command,
@@ -594,10 +611,7 @@ class DesktopConnectionNotifier extends Notifier<DesktopConnectionState> {
 
   /// 向常驻会话写入数据，输出由 shell.output 事件异步推送
   Future<void> writeShellSession(String data) async {
-    await request(
-      JsxposedMethod.shellWrite,
-      params: {'data': data},
-    );
+    await request(JsxposedMethod.shellWrite, params: {'data': data});
   }
 
   /// 关闭常驻 shell 会话
@@ -645,6 +659,14 @@ class DesktopConnectionNotifier extends Notifier<DesktopConnectionState> {
 
   Future<void> setConsoleSearch(String query) async {
     await request(JsxposedMethod.consoleSetSearch, params: {'query': query});
+  }
+
+  Future<void> setConsoleLevel(String level) async {
+    await request(JsxposedMethod.consoleSetLevel, params: {'level': level});
+  }
+
+  Future<void> setConsoleSource(String source) async {
+    await request(JsxposedMethod.consoleSetSource, params: {'source': source});
   }
 
   Future<void> clearConsole() async {

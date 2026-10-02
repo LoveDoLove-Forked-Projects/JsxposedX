@@ -21,6 +21,7 @@ abstract final class JsxposedMethod {
   static const scriptWrite = 'script.write';
   static const scriptDelete = 'script.delete';
   static const scriptToggle = 'script.toggle';
+  static const scriptGetEnabled = 'script.get_enabled';
   static const scriptRun = 'script.run';
 
   static const shellExec = 'shell.exec';
@@ -32,6 +33,8 @@ abstract final class JsxposedMethod {
   static const consoleSetPaused = 'console.set_paused';
   static const consoleSetAutoScroll = 'console.set_autoscroll';
   static const consoleSetSearch = 'console.set_search';
+  static const consoleSetLevel = 'console.set_level';
+  static const consoleSetSource = 'console.set_source';
   static const consoleClear = 'console.clear';
   static const consoleStart = 'console.start';
   static const consoleStop = 'console.stop';

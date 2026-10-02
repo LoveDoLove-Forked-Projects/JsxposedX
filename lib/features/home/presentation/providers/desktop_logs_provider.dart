@@ -105,6 +105,7 @@ class DesktopConsoleState {
     this.isPaused = false,
     this.autoScroll = true,
     this.searchQuery = '',
+    this.filterLevel = 'V',
     this.sessionId = '',
     this.sessionConversationId,
     this.targetPackage = '',
@@ -116,6 +117,7 @@ class DesktopConsoleState {
   final bool isPaused;
   final bool autoScroll;
   final String searchQuery;
+  final String filterLevel;
   final String sessionId;
   final String? sessionConversationId;
   final String targetPackage;
@@ -128,6 +130,7 @@ class DesktopConsoleState {
         isPaused: json['isPaused'] as bool? ?? false,
         autoScroll: json['autoScroll'] as bool? ?? true,
         searchQuery: json['searchQuery'] as String? ?? '',
+        filterLevel: json['filterLevel'] as String? ?? 'V',
         sessionId: json['sessionId'] as String? ?? '',
         sessionConversationId: json['sessionConversationId'] as String?,
         targetPackage: json['targetPackage'] as String? ?? '',
@@ -243,6 +246,14 @@ class DesktopLogsNotifier extends Notifier<DesktopConsoleMirror> {
   Future<void> setSearch(String query) => ref
       .read(desktopConnectionProvider.notifier)
       .setConsoleSearch(query);
+
+  Future<void> setLevel(String level) => ref
+      .read(desktopConnectionProvider.notifier)
+      .setConsoleLevel(level);
+
+  Future<void> setSource(String source) => ref
+      .read(desktopConnectionProvider.notifier)
+      .setConsoleSource(source);
 
   /// 清空控制台。本地先乐观清空已缓存日志，再通知手机端清空真源，
   /// 否则手机端清空后广播的 consoleState 不携带日志，PC 列表会残留。

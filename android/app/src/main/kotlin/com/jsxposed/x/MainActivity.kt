@@ -1,8 +1,12 @@
-﻿package com.jsxposed.x
+package com.jsxposed.x
 
+import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.jsxposed.x.bridge.DesktopBridgeMessengerHolder
+import com.jsxposed.x.bridge.DesktopConnectionReporter
 import com.jsxposed.x.core.bridge.lsposed_native.LSPosed
 import com.jsxposed.x.core.utils.log.LogX
 import io.flutter.embedding.android.FlutterActivity
@@ -20,12 +24,25 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         Log.d(TAG, "========== MainActivity.configureFlutterEngine ==========")
         NativeProvider.registerAll(this, flutterEngine.dartExecutor.binaryMessenger)
+        DesktopConnectionReporter.attach(flutterEngine.dartExecutor.binaryMessenger)
+        DesktopBridgeMessengerHolder.attach(flutterEngine.dartExecutor.binaryMessenger)
         Log.d(TAG, "NativeProvider registered")
     }
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "MainActivity.onCreate")
+        startDesktopBridgeService()
+    }
+
+    private fun startDesktopBridgeService() {
+        val serviceIntent = Intent(this, DesktopBridgeForegroundService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+        Log.d(TAG, "Desktop bridge service started")
     }
 
     override fun onResume() {
