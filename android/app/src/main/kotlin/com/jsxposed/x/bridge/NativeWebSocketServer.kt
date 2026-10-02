@@ -23,13 +23,11 @@ class NativeWebSocketServer(
     private val jsxposedVersion = "1.0"
 
     override fun openWebSocket(handshake: IHTTPSession): WebSocket {
-        Log.d(TAG, "New WebSocket connection from ${handshake.remoteIpAddress}")
         return BridgeWebSocket(handshake)
     }
 
     inner class BridgeWebSocket(handshake: IHTTPSession) : NanoWSD.WebSocket(handshake) {
         override fun onOpen() {
-            Log.d(TAG, "WebSocket opened")
             connections.add(this)
             DesktopConnectionReporter.report(connections.size)
         }
@@ -39,7 +37,6 @@ class NativeWebSocketServer(
             reason: String?,
             initiatedByRemote: Boolean
         ) {
-            Log.d(TAG, "WebSocket closed: code=$code, reason=$reason, remote=$initiatedByRemote")
             connections.remove(this)
             DesktopConnectionReporter.report(connections.size)
         }
@@ -47,14 +44,12 @@ class NativeWebSocketServer(
         override fun onMessage(message: NanoWSD.WebSocketFrame) {
             try {
                 val text = message.textPayload
-                Log.d(TAG, "Received message: $text")
                 
                 val request = gson.fromJson(text, Map::class.java) as Map<String, Any?>
                 val response = handleRequest(request)
                 
                 val responseJson = gson.toJson(response)
                 send(responseJson)
-                Log.d(TAG, "Sent response: $responseJson")
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling message", e)
                 val errorResponse = mapOf(
@@ -70,7 +65,6 @@ class NativeWebSocketServer(
         }
 
         override fun onPong(pong: NanoWSD.WebSocketFrame) {
-            Log.d(TAG, "Received pong")
         }
 
         override fun onException(exception: IOException) {
@@ -86,7 +80,6 @@ class NativeWebSocketServer(
         
         val result = when (method) {
             "handshake" -> {
-                Log.d(TAG, "Handling handshake")
                 mapOf(
                     "protocolVersion" to (params?.get("protocolVersion") ?: "1.0"),
                     "server" to "JsxposedX Android Native",
@@ -101,7 +94,6 @@ class NativeWebSocketServer(
             }
             else -> {
                 // 业务请求交给前台服务的原生处理器
-                Log.d(TAG, "Handling business request: $method")
                 val handlerResult = requestHandler(request)
                 return mapOf(
                     "type" to "response",
@@ -148,7 +140,6 @@ class NativeWebSocketServer(
         try {
             // timeout=0 表示不设置读超时，WebSocket 长连接不会被服务器主动断开
             start(0, false)
-            Log.i(TAG, "WebSocket server started on port $port")
         } catch (e: IOException) {
             Log.e(TAG, "Failed to start server", e)
             throw e
@@ -165,6 +156,5 @@ class NativeWebSocketServer(
             }
         }
         connections.clear()
-        Log.i(TAG, "WebSocket server stopped")
     }
 }

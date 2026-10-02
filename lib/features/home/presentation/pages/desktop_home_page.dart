@@ -26,6 +26,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:re_editor/re_editor.dart';
+import 'package:super_sliver_list/super_sliver_list.dart';
 import 'package:xterm/xterm.dart';
 
 /// PC 端主页面（壳子）
@@ -2275,14 +2276,16 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
         message: hasFilter ? context.l10n.noLogsFiltered : context.l10n.noLogs,
       );
     }
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount: entries.length,
-      itemBuilder: (context, index) => _LogRow(
-        entry: entries[index],
-        matcher: matcher,
-        onCopy: () => _copyEntry(entries[index]),
+    return SelectionArea(
+      child: SuperListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: entries.length,
+        itemBuilder: (context, index) => _LogRow(
+          entry: entries[index],
+          matcher: matcher,
+          onCopy: () => _copyEntry(entries[index]),
+        ),
       ),
     );
   }
@@ -2315,37 +2318,39 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
         message: context.l10n.consoleNoHistory,
       );
     }
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount:
-          historyEntries.length +
-          liveEntries.length +
-          1 +
-          (liveEntries.isEmpty ? 0 : 1),
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          return _HistoryLoadOlderButton(
-            loading: mirror.historyLoading,
-            hasMore: mirror.historyHasMore,
-            error: mirror.historyError,
-            onTap: () =>
-                ref.read(desktopLogsProvider.notifier).loadHistory(older: true),
-          );
-        }
-        final historyEnd = 1 + historyEntries.length;
-        if (index < historyEnd) {
-          return _PersistedLogRow(log: historyEntries[index - 1]);
-        }
-        if (index == historyEnd) {
-          return _LiveSectionDivider(label: context.l10n.consoleLiveBelow);
-        }
-        return _LogRow(
-          entry: liveEntries[index - historyEnd - 1],
-          matcher: matcher,
-          onCopy: () => _copyEntry(liveEntries[index - historyEnd - 1]),
-        );
-      },
+    return SelectionArea(
+      child: CustomScrollView(
+        controller: _scrollController,
+        slivers: [
+          const SliverPadding(padding: EdgeInsets.only(top: 4)),
+          SliverToBoxAdapter(
+            child: _HistoryLoadOlderButton(
+              loading: mirror.historyLoading,
+              hasMore: mirror.historyHasMore,
+              error: mirror.historyError,
+              onTap: () =>
+                  ref.read(desktopLogsProvider.notifier).loadHistory(older: true),
+            ),
+          ),
+          SuperSliverList.builder(
+            itemCount: historyEntries.length,
+            itemBuilder: (context, index) => _PersistedLogRow(log: historyEntries[index]),
+          ),
+          if (liveEntries.isNotEmpty)
+            SliverToBoxAdapter(
+              child: _LiveSectionDivider(label: context.l10n.consoleLiveBelow),
+            ),
+          SuperSliverList.builder(
+            itemCount: liveEntries.length,
+            itemBuilder: (context, index) => _LogRow(
+              entry: liveEntries[index],
+              matcher: matcher,
+              onCopy: () => _copyEntry(liveEntries[index]),
+            ),
+          ),
+          const SliverPadding(padding: EdgeInsets.only(bottom: 4)),
+        ],
+      ),
     );
   }
 
@@ -3216,11 +3221,7 @@ class _LogRowState extends State<_LogRow> {
     _ => const Color(0xFF90A4AE),
   };
 
-  Color get _rowBgColor => switch (entry.level) {
-    'E' || 'F' => const Color(0x14EF5350),
-    'W' => const Color(0x0DFFA726),
-    _ => Colors.transparent,
-  };
+  Color get _rowBgColor => _levelColor.withValues(alpha: 0.08);
 
   TextStyle _messageStyle(BuildContext context) => TextStyle(
     fontFamily: 'monospace',
@@ -3237,9 +3238,23 @@ class _LogRowState extends State<_LogRow> {
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
     final messageStyle = _messageStyle(context);
-    final timeDisplay = entry.timestamp.length > 6
-        ? entry.timestamp.substring(6)
-        : '';
+    
+    String timeDisplay = '';
+    if (entry.timestamp.isNotEmpty) {
+      try {
+        final dt = DateTime.parse(entry.timestamp);
+        timeDisplay = '${dt.month.toString().padLeft(2, '0')}-'
+                      '${dt.day.toString().padLeft(2, '0')} '
+                      '${dt.hour.toString().padLeft(2, '0')}:'
+                      '${dt.minute.toString().padLeft(2, '0')}:'
+                      '${dt.second.toString().padLeft(2, '0')}';
+      } catch (_) {
+        timeDisplay = entry.timestamp.length > 6
+            ? entry.timestamp.substring(6)
+            : '';
+      }
+    }
+    
     final hasStructured = entry.tag.isNotEmpty || entry.source.isNotEmpty;
     final messageText = hasStructured ? entry.message : entry.rawLine;
     final meta = [
@@ -3253,15 +3268,14 @@ class _LogRowState extends State<_LogRow> {
       fontWeight: FontWeight.w600,
     );
 
-    return InkWell(
-      onLongPress: widget.onCopy,
-      child: Container(
-        color: _rowBgColor,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
+    return Container(
+      color: _rowBgColor,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SelectionContainer.disabled(
+            child: Container(
               width: 16,
               height: 16,
               margin: const EdgeInsets.only(top: 2),
@@ -3280,68 +3294,66 @@ class _LogRowState extends State<_LogRow> {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          meta,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: _sourceColor.withValues(alpha: 0.85),
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w600,
-                          ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        meta,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: _sourceColor.withValues(alpha: 0.85),
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.w600,
                         ),
-                      ),
-                      if (timeDisplay.isNotEmpty)
-                        Text(
-                          timeDisplay,
-                          style: TextStyle(
-                            fontSize: 9,
-                            color: colors.onSurfaceVariant.withValues(
-                              alpha: 0.7,
-                            ),
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                    ],
-                  ),
-                  Text.rich(
-                    TextSpan(
-                      children: widget.matcher.split(
-                        messageText,
-                        messageStyle,
-                        highlightStyle,
                       ),
                     ),
-                  ),
-                  if (entry.stackTrace.isNotEmpty)
-                    GestureDetector(
-                      onTap: () =>
-                          setState(() => _stackExpanded = !_stackExpanded),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            entry.stackTrace,
-                            maxLines: _stackExpanded ? null : 5,
-                            overflow: _stackExpanded
-                                ? TextOverflow.visible
-                                : TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 10,
-                              color: Color(0xFFEF9A9A),
-                              height: 1.3,
-                            ),
+                    if (timeDisplay.isNotEmpty)
+                      Text(
+                        timeDisplay,
+                        style: TextStyle(
+                          fontSize: 9,
+                          color: colors.onSurfaceVariant.withValues(
+                            alpha: 0.7,
                           ),
-                          Text(
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                  ],
+                ),
+                Text.rich(
+                  TextSpan(
+                    children: widget.matcher.split(
+                      messageText,
+                      messageStyle,
+                      highlightStyle,
+                    ),
+                  ),
+                ),
+                if (entry.stackTrace.isNotEmpty)
+                  GestureDetector(
+                    onTap: () =>
+                        setState(() => _stackExpanded = !_stackExpanded),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          entry.stackTrace,
+                          maxLines: _stackExpanded ? null : 5,
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 10,
+                            color: Color(0xFFEF9A9A),
+                            height: 1.3,
+                          ),
+                        ),
+                        SelectionContainer.disabled(
+                          child: Text(
                             _stackExpanded
                                 ? context.l10n.consoleCollapseStack
                                 : context.l10n.consoleExpandStack,
@@ -3351,13 +3363,15 @@ class _LogRowState extends State<_LogRow> {
                               fontFamily: 'monospace',
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
-            IconButton(
+          ),
+          SelectionContainer.disabled(
+            child: IconButton(
               tooltip: context.l10n.consoleLogCopied,
               iconSize: 14,
               visualDensity: VisualDensity.compact,
@@ -3367,8 +3381,8 @@ class _LogRowState extends State<_LogRow> {
                 color: colors.onSurfaceVariant.withValues(alpha: 0.7),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -3390,7 +3404,7 @@ class _PersistedLogRow extends StatelessWidget {
     if (log.stackTrace.isNotEmpty) buffer.write('\n${log.stackTrace}');
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      child: SelectableText(
+      child: Text(
         buffer.toString(),
         style: TextStyle(
           fontFamily: 'monospace',
