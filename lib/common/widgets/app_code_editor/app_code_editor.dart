@@ -38,6 +38,9 @@ class AppCodeEditor extends HookWidget {
   /// 是否显示底部符号工具栏。桌面端用物理键盘，不需要符号输入栏。
   final bool showToolbar;
 
+  /// Ctrl/Cmd+S 保存回调
+  final VoidCallback? onSave;
+
   const AppCodeEditor({
     super.key,
     required this.controller,
@@ -55,6 +58,7 @@ class AppCodeEditor extends HookWidget {
     this.readOnlyToolbarLabel,
     this.readOnlyMaxHeight,
     this.showToolbar = true,
+    this.onSave,
   });
 
   @override
@@ -110,6 +114,16 @@ class AppCodeEditor extends HookWidget {
       ),
       wordWrap: false,
       readOnly: readOnly,
+      shortcutOverrideActions: onSave != null
+          ? {
+              CodeShortcutSaveIntent: CallbackAction<CodeShortcutSaveIntent>(
+                onInvoke: (_) {
+                  onSave?.call();
+                  return null;
+                },
+              ),
+            }
+          : null,
       indicatorBuilder: readOnly
           ? null
           : (context, editingController, chunkController, notifier) {

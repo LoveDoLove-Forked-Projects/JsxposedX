@@ -1078,7 +1078,7 @@ class _GroupEmptyRow extends _ExplorerRow {
   const _GroupEmptyRow();
 }
 
-class _ProjectNode extends StatelessWidget {
+class _ProjectNode extends StatefulWidget {
   const _ProjectNode({
     required this.project,
     required this.expanded,
@@ -1090,44 +1090,84 @@ class _ProjectNode extends StatelessWidget {
   final VoidCallback onToggle;
 
   @override
+  State<_ProjectNode> createState() => _ProjectNodeState();
+}
+
+class _ProjectNodeState extends State<_ProjectNode> {
+  bool _hovering = false;
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
-    final name = project.name.isEmpty ? project.packageName : project.name;
-    return ListTile(
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      leading: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(expanded ? Icons.expand_more : Icons.chevron_right, size: 18),
-          const SizedBox(width: 6),
-          const _AppEntryIcon(),
-        ],
-      ),
-      title: Tooltip(
-        message: name,
-        child: Text(
-          name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 13),
+    final name = widget.project.name.isEmpty ? widget.project.packageName : widget.project.name;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: InkWell(
+        onTap: widget.onToggle,
+        onSecondaryTapUp: (details) {
+          // _showGroupContextMenu(context, details.globalPosition);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: _hovering 
+              ? colors.surfaceContainerHighest.withValues(alpha: 0.5)
+              : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                widget.expanded ? Icons.expand_more : Icons.chevron_right, 
+                size: 18,
+                color: colors.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              const _AppEntryIcon(),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Tooltip(
+                      message: name,
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: colors.onSurface,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Tooltip(
+                      message: widget.project.packageName,
+                      child: Text(
+                        widget.project.packageName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-      subtitle: Tooltip(
-        message: project.packageName,
-        child: Text(
-          project.packageName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
-        ),
-      ),
-      onTap: onToggle,
     );
   }
 }
 
-class _ScriptGroup extends StatelessWidget {
+class _ScriptGroup extends StatefulWidget {
   const _ScriptGroup({
     required this.source,
     required this.expanded,
@@ -1139,32 +1179,98 @@ class _ScriptGroup extends StatelessWidget {
   final VoidCallback onToggle;
 
   @override
+  State<_ScriptGroup> createState() => _ScriptGroupState();
+}
+
+class _ScriptGroupState extends State<_ScriptGroup> {
+  bool _hovering = false;
+
+  void _showGroupContextMenu(BuildContext context, Offset position) {
+    final colors = context.colorScheme;
+    showMenu(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx + 1,
+        position.dy + 1,
+      ),
+      items: [
+        PopupMenuItem(
+          child: Row(
+            children: [
+              Icon(Icons.add_outlined, size: 16, color: colors.onSurface),
+              const SizedBox(width: 12),
+              const Text('创建'),
+            ],
+          ),
+          onTap: () {
+            // TODO: 实现创建功能
+          },
+        ),
+        PopupMenuItem(
+          child: Row(
+            children: [
+              Icon(Icons.upload_outlined, size: 16, color: colors.onSurface),
+              const SizedBox(width: 12),
+              const Text('导入'),
+            ],
+          ),
+          onTap: () {
+            // TODO: 实现导入功能
+          },
+        ),
+      ],
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
-    final label = source == JsxposedScriptSource.frida
+    final label = widget.source == JsxposedScriptSource.frida
         ? context.l10n.desktopExplorerFridaScripts
         : context.l10n.desktopExplorerXposedScripts;
-    return InkWell(
-      onTap: onToggle,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 6, 12, 2),
-        child: Row(
-          children: [
-            Icon(
-              expanded ? Icons.expand_more : Icons.chevron_right,
-              size: 14,
-              color: colors.onSurfaceVariant,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: colors.onSurfaceVariant,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: InkWell(
+        onTap: widget.onToggle,
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(20, 8, 12, 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: _hovering
+              ? colors.surfaceContainerHigh
+              : colors.surfaceContainer.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(4),
+            border: Border(
+              left: BorderSide(
+                color: widget.source == JsxposedScriptSource.frida
+                  ? const Color(0xFFE85C45)
+                  : const Color(0xFF5C9CEE),
+                width: 2,
               ),
             ),
-          ],
+          ),
+          child: Row(
+            children: [
+              Icon(
+                widget.expanded ? Icons.expand_more : Icons.chevron_right,
+                size: 14,
+                color: colors.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: colors.onSurface,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1180,7 +1286,7 @@ class _ScriptEnabledOverrides extends Notifier<Map<String, bool>> {
   void set(String key, bool value) => state = {...state, key: value};
 }
 
-class _ScriptNode extends ConsumerWidget {
+class _ScriptNode extends ConsumerStatefulWidget {
   const _ScriptNode({
     required this.packageName,
     required this.source,
@@ -1196,37 +1302,153 @@ class _ScriptNode extends ConsumerWidget {
   final ValueChanged<DesktopScriptSelection> onSelect;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ScriptNode> createState() => _ScriptNodeState();
+}
+
+class _ScriptNodeState extends ConsumerState<_ScriptNode> {
+  bool _hovering = false;
+
+  void _showScriptContextMenu(BuildContext context, Offset position) {
+    final colors = context.colorScheme;
+    showMenu(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx + 1,
+        position.dy + 1,
+      ),
+      items: [
+        PopupMenuItem(
+          child: Row(
+            children: [
+              Icon(Icons.share_outlined, size: 16, color: colors.onSurface),
+              const SizedBox(width: 12),
+              const Text('分享'),
+            ],
+          ),
+          onTap: () {
+            // TODO: 实现分享功能
+          },
+        ),
+        PopupMenuItem(
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline, size: 16, color: colors.error),
+              const SizedBox(width: 12),
+              Text('删除', style: TextStyle(color: colors.error)),
+            ],
+          ),
+          onTap: () {
+            // TODO: 实现删除功能
+          },
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.colorScheme;
     final overrides = ref.watch(_scriptEnabledOverrides);
-    final key = '$packageName|$source|${script.localPath}';
-    final enabled = overrides[key] ?? script.enabled;
-    return ListTile(
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      contentPadding: const EdgeInsets.only(left: 30, right: 8),
-      selected: active,
-      selectedTileColor: colors.primary.withValues(alpha: 0.10),
-      leading: const _JsScriptIcon(),
-      title: Tooltip(
-        message: script.name,
-        child: Text(
-          script.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 12,
-            color: enabled ? const Color(0xFF4CAF50) : null,
-          ),
+    final key = '${widget.packageName}|${widget.source}|${widget.script.localPath}';
+    final enabled = overrides[key] ?? widget.script.enabled;
+    final isDark = colors.brightness == Brightness.dark;
+    
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(28, 3, 12, 3),
+        decoration: BoxDecoration(
+          color: widget.active
+            ? (isDark 
+                ? colors.primary.withValues(alpha: 0.25)
+                : colors.primary.withValues(alpha: 0.15))
+            : _hovering
+              ? colors.surfaceContainerHighest.withValues(alpha: 0.7)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: widget.active
+            ? Border.all(
+                color: isDark 
+                  ? colors.primary.withValues(alpha: 0.6)
+                  : colors.primary.withValues(alpha: 0.5), 
+                width: 1,
+              )
+            : null,
+          boxShadow: widget.active
+            ? [
+                BoxShadow(
+                  color: colors.primary.withValues(alpha: isDark ? 0.3 : 0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
         ),
-      ),
-      onTap: () => onSelect(
-        DesktopScriptSelection(
-          packageName: packageName,
-          source: source,
-          localPath: script.localPath,
-          name: script.name,
-          enabled: script.enabled,
+        child: InkWell(
+          onTap: () => widget.onSelect(
+            DesktopScriptSelection(
+              packageName: widget.packageName,
+              source: widget.source,
+              localPath: widget.script.localPath,
+              name: widget.script.name,
+              enabled: widget.script.enabled,
+            ),
+          ),
+          onSecondaryTapUp: (details) {
+            _showScriptContextMenu(context, details.globalPosition);
+          },
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                const _JsScriptIcon(),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: Tooltip(
+                      message: widget.script.name,
+                      child: Text(
+                        widget.script.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: widget.active ? FontWeight.w600 : FontWeight.w500,
+                          color: enabled 
+                            ? (widget.active && isDark
+                                ? const Color(0xFF66BB6A)
+                                : const Color(0xFF2E7D32))
+                            : widget.active
+                              ? (isDark 
+                                  ? colors.primary
+                                  : colors.primary.withValues(alpha: 0.9))
+                              : colors.onSurface,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (enabled)
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4CAF50),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF4CAF50).withValues(alpha: 0.5),
+                          blurRadius: 4,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1528,22 +1750,11 @@ class _EditorWorkspaceState extends ConsumerState<_EditorWorkspace> {
     ref.listen(_selectedScriptProvider, (_, next) => _syncSelection(next));
     final selection = _loaded;
 
-    return CallbackShortcuts(
-      bindings: {
-        // Mac 用 Cmd+S，Windows/Linux 用 Ctrl+S，与手机端「保存并运行」等价
-        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): _saveAndRun,
-        const SingleActivator(LogicalKeyboardKey.keyS, control: true):
-            _saveAndRun,
-      },
-      child: Focus(
-        autofocus: true,
-        child: Column(
-          children: [
-            _buildEditorToolbar(colors, selection),
-            Expanded(child: _buildBody(colors, selection)),
-          ],
-        ),
-      ),
+    return Column(
+      children: [
+        _buildEditorToolbar(colors, selection),
+        Expanded(child: _buildBody(colors, selection)),
+      ],
     );
   }
 
@@ -1700,6 +1911,8 @@ class _EditorWorkspaceState extends ConsumerState<_EditorWorkspace> {
             : _xposedPrompts,
         // 桌面端使用物理键盘，不需要符号输入栏
         showToolbar: false,
+        // Ctrl/Cmd+S 保存并运行
+        onSave: _saveAndRun,
       ),
     );
   }
