@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:JsxposedX/common/widgets/app_bottom_sheet.dart';
 import 'package:JsxposedX/common/widgets/app_code_editor.dart';
 import 'package:JsxposedX/common/widgets/cache_image.dart';
+import 'package:JsxposedX/common/widgets/toast.dart';
 import 'package:JsxposedX/core/constants/assets_constants.dart';
 import 'package:JsxposedX/core/extensions/context_extensions.dart';
 import 'package:JsxposedX/core/transport/jsxposed_protocol.dart';
+import 'package:JsxposedX/core/utils/js_formatter.dart';
 import 'package:JsxposedX/core/utils/procedure_utils.dart';
 import 'package:JsxposedX/core/utils/url_helper.dart';
 import 'package:JsxposedX/features/home/presentation/providers/check_query_provider.dart';
@@ -85,9 +88,13 @@ class DesktopHomePage extends HookConsumerWidget {
                   onSelect: (index) => currentIndex.value = index,
                 ),
                 Expanded(
-                  child: selectedIndex == 1
-                      ? const _DesktopSettingsView()
-                      : const _DesktopWorkbenchView(),
+                  child: IndexedStack(
+                    index: selectedIndex,
+                    children: const [
+                      _DesktopWorkbenchView(),
+                      _DesktopSettingsView(),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -240,9 +247,9 @@ Future<void> _checkDesktopUpdate(
     }
 
     if (showLatestResult && context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(context.l10n.desktopUpdateLatest)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.desktopUpdateLatest)),
+      );
     }
   } catch (error, stackTrace) {
     debugPrint('Failed to check desktop update: $error');
@@ -818,9 +825,33 @@ class _ProjectExplorer extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
-          child: Text(
-            context.l10n.desktopExplorerTitle,
-            style: Theme.of(context).textTheme.labelSmall,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  context.l10n.desktopExplorerTitle,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ),
+              if (connection.isConnected)
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 16),
+                  iconSize: 16,
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(
+                    minWidth: 24,
+                    minHeight: 24,
+                  ),
+                  tooltip: context.l10n.refresh,
+                  onPressed: () {
+                    // 触发刷新
+                    ref
+                        .read(desktopConnectionProvider.notifier)
+                        .contextRevision
+                        .value++;
+                  },
+                ),
+            ],
           ),
         ),
         Expanded(
@@ -902,103 +933,135 @@ class _ProjectTree extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final collapsedProjects = useState(<String>{});
     final collapsedGroups = useState(<String>{});
-    // 折叠用 useState 保持；只在挂载时拉取一次（脚本开关只影响单个脚本，不重载整树）
-    final future = useMemoized(() => _load(ref), const []);
-    return FutureBuilder<_ExplorerData>(
-      future: future,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _ExplorerPlaceholder(
-            icon: Icons.error_outline,
-            message: '${snapshot.error}',
-          );
+    final data = useState<_ExplorerData?>(null);
+    final error = useState<Object?>(null);
+    final loading = useState(true);
+
+    // 初始加载
+    useEffect(() {
+      _load(ref)
+          .then((result) {
+            data.value = result;
+            loading.value = false;
+          })
+          .catchError((e) {
+            error.value = e;
+            loading.value = false;
+          });
+      return null;
+    }, const []);
+
+    // 监听 contextRevision 变化（创建/删除脚本后自动刷新）
+    final notifier = ref.read(desktopConnectionProvider.notifier);
+    useValueListenable(notifier.contextRevision);
+    useEffect(() {
+      // contextRevision 变化时重新加载
+      if (data.value != null) {
+        // 不是初次加载才触发
+        loading.value = true;
+        error.value = null;
+        _load(ref)
+            .then((result) {
+              data.value = result;
+              loading.value = false;
+            })
+            .catchError((e) {
+              error.value = e;
+              loading.value = false;
+            });
+      }
+      return null;
+    }, [notifier.contextRevision.value]);
+
+    if (error.value != null) {
+      return _ExplorerPlaceholder(
+        icon: Icons.error_outline,
+        message: '${error.value}',
+      );
+    }
+    if (loading.value || data.value == null) {
+      return const Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    final explorerData = data.value!;
+    if (explorerData.projects.isEmpty) {
+      return _ExplorerPlaceholder(
+        icon: Icons.folder_off_outlined,
+        message: context.l10n.desktopExplorerDescription,
+      );
+    }
+    final rows = _flatten(
+      explorerData,
+      collapsedProjects.value,
+      collapsedGroups.value,
+    );
+    // 懒加载：行 widget 由 itemBuilder 按可视范围按需构建，
+    // 大量脚本时只渲染屏幕内的列表项
+    return ListView.builder(
+      itemCount: rows.length,
+      itemBuilder: (context, index) {
+        final selected = this.selected;
+        switch (rows[index]) {
+          case _ProjectRow(:final project):
+            return _ProjectNode(
+              project: project,
+              expanded: !collapsedProjects.value.contains(project.packageName),
+              onToggle: () {
+                final next = {...collapsedProjects.value};
+                if (next.contains(project.packageName)) {
+                  next.remove(project.packageName);
+                } else {
+                  next.add(project.packageName);
+                }
+                collapsedProjects.value = next;
+              },
+            );
+          case _GroupRow(:final project, :final source):
+            return _ScriptGroup(
+              source: source,
+              packageName: project.packageName,
+              expanded: !collapsedGroups.value.contains(
+                '${project.packageName}:$source',
+              ),
+              onToggle: () {
+                final key = '${project.packageName}:$source';
+                final next = {...collapsedGroups.value};
+                if (next.contains(key)) {
+                  next.remove(key);
+                } else {
+                  next.add(key);
+                }
+                collapsedGroups.value = next;
+              },
+            );
+          case _ScriptRow(:final project, :final source, :final script):
+            return _ScriptNode(
+              packageName: project.packageName,
+              source: source,
+              script: script,
+              active:
+                  selected?.packageName == project.packageName &&
+                  selected?.source == source &&
+                  selected?.localPath == script.localPath,
+              onSelect: onSelect,
+            );
+          case _GroupEmptyRow():
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(34, 2, 12, 2),
+              child: Text(
+                context.l10n.desktopExplorerNoScripts,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: context.colorScheme.outline,
+                ),
+              ),
+            );
         }
-        if (!snapshot.hasData) {
-          return const Center(
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          );
-        }
-        final data = snapshot.data!;
-        if (data.projects.isEmpty) {
-          return _ExplorerPlaceholder(
-            icon: Icons.folder_off_outlined,
-            message: context.l10n.desktopExplorerDescription,
-          );
-        }
-        final rows = _flatten(
-          data,
-          collapsedProjects.value,
-          collapsedGroups.value,
-        );
-        // 懒加载：行 widget 由 itemBuilder 按可视范围按需构建，
-        // 大量脚本时只渲染屏幕内的列表项
-        return ListView.builder(
-          itemCount: rows.length,
-          itemBuilder: (context, index) {
-            final selected = this.selected;
-            switch (rows[index]) {
-              case _ProjectRow(:final project):
-                return _ProjectNode(
-                  project: project,
-                  expanded: !collapsedProjects.value.contains(
-                    project.packageName,
-                  ),
-                  onToggle: () {
-                    final next = {...collapsedProjects.value};
-                    if (next.contains(project.packageName)) {
-                      next.remove(project.packageName);
-                    } else {
-                      next.add(project.packageName);
-                    }
-                    collapsedProjects.value = next;
-                  },
-                );
-              case _GroupRow(:final project, :final source):
-                return _ScriptGroup(
-                  source: source,
-                  expanded: !collapsedGroups.value.contains(
-                    '${project.packageName}:$source',
-                  ),
-                  onToggle: () {
-                    final key = '${project.packageName}:$source';
-                    final next = {...collapsedGroups.value};
-                    if (next.contains(key)) {
-                      next.remove(key);
-                    } else {
-                      next.add(key);
-                    }
-                    collapsedGroups.value = next;
-                  },
-                );
-              case _ScriptRow(:final project, :final source, :final script):
-                return _ScriptNode(
-                  packageName: project.packageName,
-                  source: source,
-                  script: script,
-                  active:
-                      selected?.packageName == project.packageName &&
-                      selected?.source == source &&
-                      selected?.localPath == script.localPath,
-                  onSelect: onSelect,
-                );
-              case _GroupEmptyRow():
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(34, 2, 12, 2),
-                  child: Text(
-                    context.l10n.desktopExplorerNoScripts,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: context.colorScheme.outline,
-                    ),
-                  ),
-                );
-            }
-          },
-        );
       },
     );
   }
@@ -1099,7 +1162,9 @@ class _ProjectNodeState extends State<_ProjectNode> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
-    final name = widget.project.name.isEmpty ? widget.project.packageName : widget.project.name;
+    final name = widget.project.name.isEmpty
+        ? widget.project.packageName
+        : widget.project.name;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
@@ -1111,20 +1176,20 @@ class _ProjectNodeState extends State<_ProjectNode> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: _hovering 
-              ? colors.surfaceContainerHighest.withValues(alpha: 0.5)
-              : Colors.transparent,
+            color: _hovering
+                ? colors.surfaceContainerHighest.withValues(alpha: 0.5)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(6),
           ),
           child: Row(
             children: [
               Icon(
-                widget.expanded ? Icons.expand_more : Icons.chevron_right, 
+                widget.expanded ? Icons.expand_more : Icons.chevron_right,
                 size: 18,
                 color: colors.onSurfaceVariant,
               ),
               const SizedBox(width: 8),
-              const _AppEntryIcon(),
+              _AppEntryIcon(iconUrl: widget.project.iconUrl),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -1167,22 +1232,24 @@ class _ProjectNodeState extends State<_ProjectNode> {
   }
 }
 
-class _ScriptGroup extends StatefulWidget {
+class _ScriptGroup extends ConsumerStatefulWidget {
   const _ScriptGroup({
     required this.source,
     required this.expanded,
     required this.onToggle,
+    required this.packageName,
   });
 
   final String source;
   final bool expanded;
   final VoidCallback onToggle;
+  final String packageName;
 
   @override
-  State<_ScriptGroup> createState() => _ScriptGroupState();
+  ConsumerState<_ScriptGroup> createState() => _ScriptGroupState();
 }
 
-class _ScriptGroupState extends State<_ScriptGroup> {
+class _ScriptGroupState extends ConsumerState<_ScriptGroup> {
   bool _hovering = false;
 
   void _showGroupContextMenu(BuildContext context, Offset position) {
@@ -1201,11 +1268,11 @@ class _ScriptGroupState extends State<_ScriptGroup> {
             children: [
               Icon(Icons.add_outlined, size: 16, color: colors.onSurface),
               const SizedBox(width: 12),
-              const Text('创建'),
+              Text(context.l10n.create),
             ],
           ),
           onTap: () {
-            // TODO: 实现创建功能
+            Future.microtask(() => _createScript());
           },
         ),
         PopupMenuItem(
@@ -1213,15 +1280,113 @@ class _ScriptGroupState extends State<_ScriptGroup> {
             children: [
               Icon(Icons.upload_outlined, size: 16, color: colors.onSurface),
               const SizedBox(width: 12),
-              const Text('导入'),
+              Text(context.l10n.importScript),
             ],
           ),
           onTap: () {
-            // TODO: 实现导入功能
+            Future.microtask(() => _importScript());
           },
         ),
       ],
     );
+  }
+
+  Future<void> _createScript() async {
+    final scriptName = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: Text(context.l10n.createScript),
+          content: TextField(
+            controller: controller,
+            decoration: InputDecoration(
+              labelText: context.l10n.scriptName,
+              hintText: 'my_script.js',
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(context.l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: Text(context.l10n.create),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (scriptName == null || scriptName.isEmpty) return;
+
+    // 确保文件名以 .js 结尾
+    final fileName = scriptName.endsWith('.js') ? scriptName : '$scriptName.js';
+
+    try {
+      // 创建空脚本
+      final notifier = ref.read(desktopConnectionProvider.notifier);
+      await notifier.writeScript(
+        packageName: widget.packageName,
+        source: widget.source,
+        localPath: fileName,
+        content: '// ${context.l10n.newScript}\n',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.createSuccess)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${context.l10n.createFailed}: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _importScript() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['js'],
+        allowMultiple: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final notifier = ref.read(desktopConnectionProvider.notifier);
+
+      for (final file in result.files) {
+        if (file.path == null) continue;
+
+        final content = await File(file.path!).readAsString();
+        final fileName = file.name;
+
+        await notifier.writeScript(
+          packageName: widget.packageName,
+          source: widget.source,
+          localPath: fileName,
+          content: content,
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.importSuccess)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${context.l10n.importFailed}: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -1235,19 +1400,22 @@ class _ScriptGroupState extends State<_ScriptGroup> {
       onExit: (_) => setState(() => _hovering = false),
       child: InkWell(
         onTap: widget.onToggle,
+        onSecondaryTapUp: (details) {
+          _showGroupContextMenu(context, details.globalPosition);
+        },
         child: Container(
           margin: const EdgeInsets.fromLTRB(20, 8, 12, 4),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
             color: _hovering
-              ? colors.surfaceContainerHigh
-              : colors.surfaceContainer.withValues(alpha: 0.5),
+                ? colors.surfaceContainerHigh
+                : colors.surfaceContainer.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(4),
             border: Border(
               left: BorderSide(
                 color: widget.source == JsxposedScriptSource.frida
-                  ? const Color(0xFFE85C45)
-                  : const Color(0xFF5C9CEE),
+                    ? const Color(0xFFE85C45)
+                    : const Color(0xFF5C9CEE),
                 width: 2,
               ),
             ),
@@ -1278,7 +1446,10 @@ class _ScriptGroupState extends State<_ScriptGroup> {
 }
 
 /// 开关启停状态的内存缓存，用于左侧脚本列表与开关联动（开启→绿色文字）
-final _scriptEnabledOverrides = NotifierProvider<_ScriptEnabledOverrides, Map<String, bool>>(_ScriptEnabledOverrides.new);
+final _scriptEnabledOverrides =
+    NotifierProvider<_ScriptEnabledOverrides, Map<String, bool>>(
+      _ScriptEnabledOverrides.new,
+    );
 
 class _ScriptEnabledOverrides extends Notifier<Map<String, bool>> {
   @override
@@ -1324,11 +1495,11 @@ class _ScriptNodeState extends ConsumerState<_ScriptNode> {
             children: [
               Icon(Icons.share_outlined, size: 16, color: colors.onSurface),
               const SizedBox(width: 12),
-              const Text('分享'),
+              Text(context.l10n.share),
             ],
           ),
           onTap: () {
-            // TODO: 实现分享功能
+            Future.microtask(() => _shareScript());
           },
         ),
         PopupMenuItem(
@@ -1336,25 +1507,101 @@ class _ScriptNodeState extends ConsumerState<_ScriptNode> {
             children: [
               Icon(Icons.delete_outline, size: 16, color: colors.error),
               const SizedBox(width: 12),
-              Text('删除', style: TextStyle(color: colors.error)),
+              Text(context.l10n.delete, style: TextStyle(color: colors.error)),
             ],
           ),
           onTap: () {
-            // TODO: 实现删除功能
+            Future.microtask(() => _deleteScript());
           },
         ),
       ],
     );
   }
 
+  Future<void> _shareScript() async {
+    try {
+      // 先获取脚本内容
+      final notifier = ref.read(desktopConnectionProvider.notifier);
+      final content = await notifier.readScript(
+        packageName: widget.packageName,
+        source: widget.source,
+        localPath: widget.script.localPath,
+      );
+
+      // 导出脚本文件
+      final fileName = widget.script.name;
+      final filePath = await FilePicker.platform.saveFile(
+        dialogTitle: context.l10n.share,
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: ['js'],
+      );
+
+      if (filePath != null) {
+        final file = File(filePath);
+        await file.writeAsString(content);
+        if (mounted) {
+          Toast.showToast(context, context.l10n.shareSuccess);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Toast.showToast(context, '${context.l10n.shareFailed}: $e');
+      }
+    }
+  }
+
+  Future<void> _deleteScript() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(context.l10n.confirmDelete),
+        content: Text(
+          '${context.l10n.deleteScriptHint}: ${widget.script.name}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(context.l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(context.l10n.delete),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await ref
+          .read(desktopConnectionProvider.notifier)
+          .deleteScript(
+            packageName: widget.packageName,
+            source: widget.source,
+            localPath: widget.script.localPath,
+          );
+
+      if (mounted) {
+        Toast.showToast(context, context.l10n.deleteSuccess);
+      }
+    } catch (e) {
+      if (mounted) {
+        Toast.showToast(context, '${context.l10n.deleteFailed}: $e');
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
     final overrides = ref.watch(_scriptEnabledOverrides);
-    final key = '${widget.packageName}|${widget.source}|${widget.script.localPath}';
+    final key =
+        '${widget.packageName}|${widget.source}|${widget.script.localPath}';
     final enabled = overrides[key] ?? widget.script.enabled;
     final isDark = colors.brightness == Brightness.dark;
-    
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
@@ -1362,30 +1609,32 @@ class _ScriptNodeState extends ConsumerState<_ScriptNode> {
         margin: const EdgeInsets.fromLTRB(28, 3, 12, 3),
         decoration: BoxDecoration(
           color: widget.active
-            ? (isDark 
-                ? colors.primary.withValues(alpha: 0.25)
-                : colors.primary.withValues(alpha: 0.15))
-            : _hovering
+              ? (isDark
+                    ? colors.primary.withValues(alpha: 0.25)
+                    : colors.primary.withValues(alpha: 0.15))
+              : _hovering
               ? colors.surfaceContainerHighest.withValues(alpha: 0.7)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: widget.active
-            ? Border.all(
-                color: isDark 
-                  ? colors.primary.withValues(alpha: 0.6)
-                  : colors.primary.withValues(alpha: 0.5), 
-                width: 1,
-              )
-            : null,
+              ? Border.all(
+                  color: isDark
+                      ? colors.primary.withValues(alpha: 0.6)
+                      : colors.primary.withValues(alpha: 0.5),
+                  width: 1,
+                )
+              : null,
           boxShadow: widget.active
-            ? [
-                BoxShadow(
-                  color: colors.primary.withValues(alpha: isDark ? 0.3 : 0.15),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : null,
+              ? [
+                  BoxShadow(
+                    color: colors.primary.withValues(
+                      alpha: isDark ? 0.3 : 0.15,
+                    ),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
         ),
         child: InkWell(
           onTap: () => widget.onSelect(
@@ -1408,28 +1657,30 @@ class _ScriptNodeState extends ConsumerState<_ScriptNode> {
                 const _JsScriptIcon(),
                 const SizedBox(width: 10),
                 Expanded(
-                    child: Tooltip(
-                      message: widget.script.name,
-                      child: Text(
-                        widget.script.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: widget.active ? FontWeight.w600 : FontWeight.w500,
-                          color: enabled 
+                  child: Tooltip(
+                    message: widget.script.name,
+                    child: Text(
+                      widget.script.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: widget.active
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        color: enabled
                             ? (widget.active && isDark
-                                ? const Color(0xFF66BB6A)
-                                : const Color(0xFF2E7D32))
+                                  ? const Color(0xFF66BB6A)
+                                  : const Color(0xFF2E7D32))
                             : widget.active
-                              ? (isDark 
+                            ? (isDark
                                   ? colors.primary
                                   : colors.primary.withValues(alpha: 0.9))
-                              : colors.onSurface,
-                        ),
+                            : colors.onSurface,
                       ),
                     ),
                   ),
+                ),
                 if (enabled)
                   Container(
                     width: 6,
@@ -1530,13 +1781,26 @@ class _SidebarSashState extends State<_SidebarSash> {
 /// 应用条目的 app 图标：Android 机器人，仿 VS Code 文件图标主题的
 /// 彩色扁平字形风格（seti/Material Icon Theme 均为此路线）。
 class _AppEntryIcon extends StatelessWidget {
-  const _AppEntryIcon();
+  const _AppEntryIcon({this.iconUrl});
+
+  final String? iconUrl;
 
   @override
   Widget build(BuildContext context) {
+    if (iconUrl != null && iconUrl!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(3),
+        child: CacheImage(
+          imageUrl: iconUrl!,
+          width: 20,
+          height: 20,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
     return const Icon(
       Icons.android_outlined,
-      size: 15,
+      size: 20,
       color: Color(0xFF3DDC84),
     );
   }
@@ -1654,7 +1918,8 @@ class _EditorWorkspaceState extends ConsumerState<_EditorWorkspace> {
     }
     // 优先使用最近开关确认后的缓存值（设备真实状态），避免旧 listScripts 覆盖
     final overrides = ref.read(_scriptEnabledOverrides);
-    final key = '${selection.packageName}|${selection.source}|${selection.localPath}';
+    final key =
+        '${selection.packageName}|${selection.source}|${selection.localPath}';
     setState(() {
       _loaded = selection;
       _scriptEnabled = overrides[key] ?? selection.enabled;
@@ -1693,7 +1958,6 @@ class _EditorWorkspaceState extends ConsumerState<_EditorWorkspace> {
     final controller = _controller;
     if (selection == null || controller == null) return;
     setState(() => _running = true);
-    final messenger = ScaffoldMessenger.of(context);
     final isFrida = selection.source == JsxposedScriptSource.frida;
     final runningMessage = context.l10n.desktopEditorRunning;
     try {
@@ -1706,11 +1970,31 @@ class _EditorWorkspaceState extends ConsumerState<_EditorWorkspace> {
             content: controller.text,
             restartApp: isFrida ? _restartApp : true,
           );
-      messenger.showSnackBar(SnackBar(content: Text(runningMessage)));
+      if (mounted) {
+        Toast.showToast(context, runningMessage);
+      }
     } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text('$error')));
+      if (mounted) {
+        Toast.showToast(context, '$error');
+      }
     } finally {
       if (mounted) setState(() => _running = false);
+    }
+  }
+
+  /// Ctrl/Cmd+Shift+F 格式化代码
+  void _formatCode() {
+    final controller = _controller;
+    if (controller == null) return;
+
+    try {
+      final text = controller.text;
+      final formatted = JsFormatter.format(text);
+      if (formatted != text) {
+        controller.text = formatted;
+      }
+    } catch (error) {
+      Toast.showToast(context, '格式化失败: $error');
     }
   }
 
@@ -1719,7 +2003,6 @@ class _EditorWorkspaceState extends ConsumerState<_EditorWorkspace> {
     final selection = _loaded;
     if (selection == null || _togglingScript) return;
     setState(() => _togglingScript = true);
-    final messenger = ScaffoldMessenger.of(context);
     final notifier = ref.read(desktopConnectionProvider.notifier);
     try {
       await notifier.toggleScript(
@@ -1732,12 +2015,16 @@ class _EditorWorkspaceState extends ConsumerState<_EditorWorkspace> {
       // 设备端已确认，校正本地状态（与乐观值一致）
       setState(() => _scriptEnabled = enabled);
       // 联动左侧脚本列表（开启→绿色文字）
-      ref.read(_scriptEnabledOverrides.notifier).set(
+      ref
+          .read(_scriptEnabledOverrides.notifier)
+          .set(
             '${selection.packageName}|${selection.source}|${selection.localPath}',
             enabled,
           );
     } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text('$error')));
+      if (mounted) {
+        Toast.showToast(context, '$error');
+      }
     } finally {
       if (mounted) setState(() => _togglingScript = false);
     }
@@ -1901,18 +2188,31 @@ class _EditorWorkspaceState extends ConsumerState<_EditorWorkspace> {
     }
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: AppCodeEditor(
-        controller: _controller!,
-        language: 'javascript',
-        readOnly: false,
-        // 与手机端共用同一套内置代码提示
-        promptsBuilder: selection.source == JsxposedScriptSource.frida
-            ? _fridaPrompts
-            : _xposedPrompts,
-        // 桌面端使用物理键盘，不需要符号输入栏
-        showToolbar: false,
-        // Ctrl/Cmd+S 保存并运行
-        onSave: _saveAndRun,
+      child: CallbackShortcuts(
+        bindings: {
+          // Ctrl+Alt+L 格式化代码 (Windows/Linux)
+          const SingleActivator(
+            LogicalKeyboardKey.keyL,
+            control: true,
+            alt: true,
+          ): _formatCode,
+          // Cmd+Option+L 格式化代码 (macOS)
+          const SingleActivator(LogicalKeyboardKey.keyL, meta: true, alt: true):
+              _formatCode,
+        },
+        child: AppCodeEditor(
+          controller: _controller!,
+          language: 'javascript',
+          readOnly: false,
+          // 与手机端共用同一套内置代码提示
+          promptsBuilder: selection.source == JsxposedScriptSource.frida
+              ? _fridaPrompts
+              : _xposedPrompts,
+          // 桌面端使用物理键盘，不需要符号输入栏
+          showToolbar: false,
+          // Ctrl/Cmd+S 保存并运行
+          onSave: _saveAndRun,
+        ),
       ),
     );
   }
@@ -2139,9 +2439,7 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
 
   void _copyEntry(DesktopLogEntry entry) {
     Clipboard.setData(ClipboardData(text: _formatEntry(entry)));
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(context.l10n.consoleLogCopied)));
+    Toast.showToast(context, context.l10n.consoleLogCopied);
   }
 
   /// 终端把键盘输入以原始序列回调过来，这里自行处理行编辑。
@@ -2541,13 +2839,15 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
               loading: mirror.historyLoading,
               hasMore: mirror.historyHasMore,
               error: mirror.historyError,
-              onTap: () =>
-                  ref.read(desktopLogsProvider.notifier).loadHistory(older: true),
+              onTap: () => ref
+                  .read(desktopLogsProvider.notifier)
+                  .loadHistory(older: true),
             ),
           ),
           SuperSliverList.builder(
             itemCount: historyEntries.length,
-            itemBuilder: (context, index) => _PersistedLogRow(log: historyEntries[index]),
+            itemBuilder: (context, index) =>
+                _PersistedLogRow(log: historyEntries[index]),
           ),
           if (liveEntries.isNotEmpty)
             SliverToBoxAdapter(
@@ -2576,17 +2876,11 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
       ClipboardData(text: source.map(_formatEntry).join('\n')),
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          truncated
-              ? context.l10n.consoleCopiedTruncated(
-                  source.length,
-                  entries.length,
-                )
-              : context.l10n.consoleCopied(source.length),
-        ),
-      ),
+    Toast.showToast(
+      context,
+      truncated
+          ? context.l10n.consoleCopiedTruncated(source.length, entries.length)
+          : context.l10n.consoleCopied(source.length),
     );
   }
 
@@ -2601,9 +2895,7 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.exportFailed('$error'))),
-      );
+      Toast.showToast(context, context.l10n.exportFailed('$error'));
     }
   }
 
@@ -2613,9 +2905,7 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
         .state
         .sessionConversationId;
     if (conversationId == null || conversationId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.consoleDeleteHistoryUnavailable)),
-      );
+      Toast.showToast(context, context.l10n.consoleDeleteHistoryUnavailable);
       return;
     }
     final confirmed = await showDialog<bool>(
@@ -2638,9 +2928,7 @@ class _RunOutputPanelState extends ConsumerState<_RunOutputPanel> {
     if (confirmed != true) return;
     await ref.read(desktopLogsProvider.notifier).deleteHistory();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(context.l10n.consoleDeleteHistoryDone)),
-    );
+    Toast.showToast(context, context.l10n.consoleDeleteHistoryDone);
   }
 }
 
@@ -3145,7 +3433,9 @@ class _ConsoleFilterRow extends StatelessWidget {
         color: colors.surfaceContainerLow,
         border: Border(
           top: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.5)),
-          bottom: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.5)),
+          bottom: BorderSide(
+            color: colors.outlineVariant.withValues(alpha: 0.5),
+          ),
         ),
       ),
       child: ListView(
@@ -3217,7 +3507,9 @@ class _TagChip extends StatelessWidget {
           border: Border.all(
             color: selected
                 ? chipColor.withValues(alpha: 0.32)
-                : (color != null ? chipColor.withValues(alpha: 0.24) : context.colorScheme.outlineVariant),
+                : (color != null
+                      ? chipColor.withValues(alpha: 0.24)
+                      : context.colorScheme.outlineVariant),
             width: 0.8,
           ),
         ),
@@ -3225,9 +3517,11 @@ class _TagChip extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 10,
-            color: color != null ? chipColor : (selected
-                ? context.colorScheme.primary
-                : context.colorScheme.onSurfaceVariant),
+            color: color != null
+                ? chipColor
+                : (selected
+                      ? context.colorScheme.primary
+                      : context.colorScheme.onSurfaceVariant),
             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
@@ -3451,23 +3745,24 @@ class _LogRowState extends State<_LogRow> {
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
     final messageStyle = _messageStyle(context);
-    
+
     String timeDisplay = '';
     if (entry.timestamp.isNotEmpty) {
       try {
         final dt = DateTime.parse(entry.timestamp);
-        timeDisplay = '${dt.month.toString().padLeft(2, '0')}-'
-                      '${dt.day.toString().padLeft(2, '0')} '
-                      '${dt.hour.toString().padLeft(2, '0')}:'
-                      '${dt.minute.toString().padLeft(2, '0')}:'
-                      '${dt.second.toString().padLeft(2, '0')}';
+        timeDisplay =
+            '${dt.month.toString().padLeft(2, '0')}-'
+            '${dt.day.toString().padLeft(2, '0')} '
+            '${dt.hour.toString().padLeft(2, '0')}:'
+            '${dt.minute.toString().padLeft(2, '0')}:'
+            '${dt.second.toString().padLeft(2, '0')}';
       } catch (_) {
         timeDisplay = entry.timestamp.length > 6
             ? entry.timestamp.substring(6)
             : '';
       }
     }
-    
+
     final hasStructured = entry.tag.isNotEmpty || entry.source.isNotEmpty;
     final messageText = hasStructured ? entry.message : entry.rawLine;
     final meta = [
@@ -3531,9 +3826,7 @@ class _LogRowState extends State<_LogRow> {
                         timeDisplay,
                         style: TextStyle(
                           fontSize: 9,
-                          color: colors.onSurfaceVariant.withValues(
-                            alpha: 0.7,
-                          ),
+                          color: colors.onSurfaceVariant.withValues(alpha: 0.7),
                           fontFamily: 'monospace',
                         ),
                       ),

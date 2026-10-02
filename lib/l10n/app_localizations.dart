@@ -884,6 +884,12 @@ abstract class AppLocalizations {
   /// **'添加'**
   String get add;
 
+  /// 刷新按钮
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新'**
+  String get refresh;
+
   /// 搜索
   ///
   /// In zh, this message translates to:
@@ -5956,6 +5962,84 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'我知道了'**
   String get memoryToolProcessTerminatedAction;
+
+  /// No description provided for @create.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建'**
+  String get create;
+
+  /// No description provided for @createScript.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建脚本'**
+  String get createScript;
+
+  /// No description provided for @scriptName.
+  ///
+  /// In zh, this message translates to:
+  /// **'脚本名称'**
+  String get scriptName;
+
+  /// No description provided for @newScript.
+  ///
+  /// In zh, this message translates to:
+  /// **'新脚本'**
+  String get newScript;
+
+  /// No description provided for @createSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建成功'**
+  String get createSuccess;
+
+  /// No description provided for @createFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建失败'**
+  String get createFailed;
+
+  /// No description provided for @importSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入成功'**
+  String get importSuccess;
+
+  /// No description provided for @importFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入失败'**
+  String get importFailed;
+
+  /// No description provided for @shareSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'分享成功'**
+  String get shareSuccess;
+
+  /// No description provided for @shareFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'分享失败'**
+  String get shareFailed;
+
+  /// No description provided for @deleteScriptHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认删除此脚本？'**
+  String get deleteScriptHint;
+
+  /// No description provided for @deleteSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除成功'**
+  String get deleteSuccess;
+
+  /// No description provided for @deleteFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除失败'**
+  String get deleteFailed;
 }
 
 class _AppLocalizationsDelegate

@@ -384,6 +384,7 @@
     "description": "Edit button"
   },
   "add": "Add",
+  "refresh": "Refresh",
   "@add": {
     "description": "Add button"
   },
@@ -1584,5 +1585,18 @@
   "memoryToolValidationTypeUnsupported": "This search type is not wired to the scan core yet.",
   "memoryToolProcessTerminatedTitle": "Target Process Closed",
   "memoryToolProcessTerminatedDescription": "The selected target process has exited. The current search session and selections were cleared. Please pick a process again before continuing.",
-  "memoryToolProcessTerminatedAction": "OK"
+  "memoryToolProcessTerminatedAction": "OK",
+  "create": "Create",
+  "createScript": "Create Script",
+  "scriptName": "Script Name",
+  "newScript": "New Script",
+  "createSuccess": "Created successfully",
+  "createFailed": "Creation failed",
+  "importSuccess": "Imported successfully",
+  "importFailed": "Import failed",
+  "shareSuccess": "Shared successfully",
+  "shareFailed": "Share failed",
+  "deleteScriptHint": "Confirm deletion of this script?",
+  "deleteSuccess": "Deleted successfully",
+  "deleteFailed": "Deletion failed"
 }

@@ -387,6 +387,10 @@
   "@add": {
     "description": "添加按钮"
   },
+  "refresh": "刷新",
+  "@refresh": {
+    "description": "刷新按钮"
+  },
   "search": "搜索",
   "@search": {
     "description": "搜索"
@@ -1589,5 +1593,18 @@
   "memoryToolValidationTypeUnsupported": "当前搜索类型尚未接入扫描内核。",
   "memoryToolProcessTerminatedTitle": "目标进程已退出",
   "memoryToolProcessTerminatedDescription": "当前选中的目标进程已经关闭，搜索会话和选择状态已被终止。请重新选择进程后再继续操作。",
-  "memoryToolProcessTerminatedAction": "我知道了"
+  "memoryToolProcessTerminatedAction": "我知道了",
+  "create": "创建",
+  "createScript": "创建脚本",
+  "scriptName": "脚本名称",
+  "newScript": "新脚本",
+  "createSuccess": "创建成功",
+  "createFailed": "创建失败",
+  "importSuccess": "导入成功",
+  "importFailed": "导入失败",
+  "shareSuccess": "分享成功",
+  "shareFailed": "分享失败",
+  "deleteScriptHint": "确认删除此脚本？",
+  "deleteSuccess": "删除成功",
+  "deleteFailed": "删除失败"
 }

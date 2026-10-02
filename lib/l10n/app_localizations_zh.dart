@@ -415,6 +415,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get add => '添加';
 
   @override
+  String get refresh => '刷新';
+
+  @override
   String get search => '搜索';
 
   @override
@@ -3050,4 +3053,43 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get memoryToolProcessTerminatedAction => '我知道了';
+
+  @override
+  String get create => '创建';
+
+  @override
+  String get createScript => '创建脚本';
+
+  @override
+  String get scriptName => '脚本名称';
+
+  @override
+  String get newScript => '新脚本';
+
+  @override
+  String get createSuccess => '创建成功';
+
+  @override
+  String get createFailed => '创建失败';
+
+  @override
+  String get importSuccess => '导入成功';
+
+  @override
+  String get importFailed => '导入失败';
+
+  @override
+  String get shareSuccess => '分享成功';
+
+  @override
+  String get shareFailed => '分享失败';
+
+  @override
+  String get deleteScriptHint => '确认删除此脚本？';
+
+  @override
+  String get deleteSuccess => '删除成功';
+
+  @override
+  String get deleteFailed => '删除失败';
 }

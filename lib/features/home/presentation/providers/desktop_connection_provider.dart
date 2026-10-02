@@ -110,18 +110,21 @@ class DesktopProject {
     required this.name,
     this.versionName,
     this.versionCode,
+    this.iconUrl,
   });
 
   final String packageName;
   final String name;
   final String? versionName;
   final int? versionCode;
+  final String? iconUrl;
 
   factory DesktopProject.fromJson(Map<String, dynamic> json) => DesktopProject(
     packageName: json['packageName'] as String? ?? '',
     name: json['name'] as String? ?? '',
     versionName: json['versionName'] as String?,
     versionCode: (json['versionCode'] as num?)?.toInt(),
+    iconUrl: json['iconUrl'] as String?,
   );
 }
 
@@ -528,6 +531,7 @@ class DesktopConnectionNotifier extends Notifier<DesktopConnectionState> {
         'content': content,
       },
     );
+    contextRevision.value++;
   }
 
   Future<void> deleteScript({
@@ -543,6 +547,7 @@ class DesktopConnectionNotifier extends Notifier<DesktopConnectionState> {
         'localPath': localPath,
       },
     );
+    contextRevision.value++;
   }
 
   Future<void> toggleScript({

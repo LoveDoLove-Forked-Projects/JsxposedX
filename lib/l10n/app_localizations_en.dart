@@ -428,6 +428,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get add => 'Add';
 
   @override
+  String get refresh => 'Refresh';
+
+  @override
   String get search => 'Search';
 
   @override
@@ -3138,4 +3141,43 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get memoryToolProcessTerminatedAction => 'OK';
+
+  @override
+  String get create => 'Create';
+
+  @override
+  String get createScript => 'Create Script';
+
+  @override
+  String get scriptName => 'Script Name';
+
+  @override
+  String get newScript => 'New Script';
+
+  @override
+  String get createSuccess => 'Created successfully';
+
+  @override
+  String get createFailed => 'Creation failed';
+
+  @override
+  String get importSuccess => 'Imported successfully';
+
+  @override
+  String get importFailed => 'Import failed';
+
+  @override
+  String get shareSuccess => 'Shared successfully';
+
+  @override
+  String get shareFailed => 'Share failed';
+
+  @override
+  String get deleteScriptHint => 'Confirm deletion of this script?';
+
+  @override
+  String get deleteSuccess => 'Deleted successfully';
+
+  @override
+  String get deleteFailed => 'Deletion failed';
 }

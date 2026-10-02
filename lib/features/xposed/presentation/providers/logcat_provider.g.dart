@@ -41,7 +41,7 @@ final class LogcatProvider
   }
 }
 
-String _$logcatHash() => r'95f2517226e28b6aa3f2d20a2ba354e72dcdd122';
+String _$logcatHash() => r'19b7e303b351a7a2cc6877d1076b60225cfa0492';
 
 abstract class _$Logcat extends $Notifier<List<LogcatEntry>> {
   List<LogcatEntry> build();
