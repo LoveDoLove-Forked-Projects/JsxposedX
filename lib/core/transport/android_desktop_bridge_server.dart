@@ -314,6 +314,10 @@ class AndroidDesktopBridgeServer {
   /// 项目即手机端以包名命名的脚本目录，脚本本体与启停状态都由手机端维护
   Future<Map<String, dynamic>> _listProjects() async {
     final projects = await _projectNative.getProjects();
+    print('📦 Projects count: ${projects.length}');
+    for (final project in projects) {
+      print('📱 ${project.name}: icon=${project.icon?.length ?? 0} bytes');
+    }
     return {
       'projects': [
         for (final project in projects)
@@ -322,6 +326,8 @@ class AndroidDesktopBridgeServer {
             'name': project.name,
             'versionName': project.versionName,
             'versionCode': project.versionCode,
+            if (project.icon != null && project.icon!.isNotEmpty)
+              'iconUrl': 'data:image/png;base64,${base64Encode(project.icon!)}',
           },
       ],
     };

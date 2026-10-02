@@ -217,12 +217,15 @@ class DesktopBridgeForegroundService : Service() {
         return success(
             mapOf(
                 "projects" to projects.map { appInfo ->
-                    mapOf(
-                        "packageName" to appInfo.packageName,
-                        "name" to appInfo.name,
-                        "versionName" to appInfo.versionName,
-                        "versionCode" to appInfo.versionCode,
-                    )
+                    buildMap<String, Any?> {
+                        put("packageName", appInfo.packageName)
+                        put("name", appInfo.name)
+                        put("versionName", appInfo.versionName)
+                        put("versionCode", appInfo.versionCode)
+                        if (appInfo.icon != null && appInfo.icon.isNotEmpty()) {
+                            put("iconUrl", "data:image/png;base64,${android.util.Base64.encodeToString(appInfo.icon, android.util.Base64.NO_WRAP)}")
+                        }
+                    }
                 },
             )
         )

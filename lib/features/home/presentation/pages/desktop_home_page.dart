@@ -247,17 +247,13 @@ Future<void> _checkDesktopUpdate(
     }
 
     if (showLatestResult && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.desktopUpdateLatest)),
-      );
+      Toast.showToast(context, context.l10n.desktopUpdateLatest);
     }
   } catch (error, stackTrace) {
     debugPrint('Failed to check desktop update: $error');
     debugPrintStack(stackTrace: stackTrace);
     if (showLatestResult && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.desktopUpdateCheckFailed)),
-      );
+      Toast.showToast(context, context.l10n.desktopUpdateCheckFailed);
     }
   }
 }
@@ -1336,15 +1332,11 @@ class _ScriptGroupState extends ConsumerState<_ScriptGroup> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.l10n.createSuccess)),
-        );
+        Toast.showToast(context, context.l10n.createSuccess);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${context.l10n.createFailed}: $e')),
-        );
+        Toast.showToast(context, '${context.l10n.createFailed}: $e');
       }
     }
   }
@@ -1376,15 +1368,11 @@ class _ScriptGroupState extends ConsumerState<_ScriptGroup> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.l10n.importSuccess)),
-        );
+        Toast.showToast(context, context.l10n.importSuccess);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${context.l10n.importFailed}: $e')),
-        );
+        Toast.showToast(context, '${context.l10n.importFailed}: $e');
       }
     }
   }
@@ -1788,19 +1776,50 @@ class _AppEntryIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (iconUrl != null && iconUrl!.isNotEmpty) {
+      // 支持 data URL (base64)
+      if (iconUrl!.startsWith('data:image/')) {
+        try {
+          final base64String = iconUrl!.split(',').last;
+          final bytes = base64Decode(base64String);
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Image.memory(
+              bytes,
+              width: 28,
+              height: 28,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(
+                  Icons.android_outlined,
+                  size: 28,
+                  color: Color(0xFF3DDC84),
+                );
+              },
+            ),
+          );
+        } catch (e) {
+          return const Icon(
+            Icons.android_outlined,
+            size: 28,
+            color: Color(0xFF3DDC84),
+          );
+        }
+      }
+      // 支持网络 URL
       return ClipRRect(
-        borderRadius: BorderRadius.circular(3),
+        borderRadius: BorderRadius.circular(4),
         child: CacheImage(
           imageUrl: iconUrl!,
-          width: 20,
-          height: 20,
+          width: 28,
+          height: 28,
           fit: BoxFit.cover,
         ),
       );
     }
     return const Icon(
       Icons.android_outlined,
-      size: 20,
+      size: 28,
       color: Color(0xFF3DDC84),
     );
   }
