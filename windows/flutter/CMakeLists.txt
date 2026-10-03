@@ -65,6 +65,7 @@ set_target_properties(flutter_wrapper_plugin PROPERTIES
   POSITION_INDEPENDENT_CODE ON)
 set_target_properties(flutter_wrapper_plugin PROPERTIES
   CXX_VISIBILITY_PRESET hidden)
+target_compile_definitions(flutter_wrapper_plugin PRIVATE "_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS")
 target_link_libraries(flutter_wrapper_plugin PUBLIC flutter)
 target_include_directories(flutter_wrapper_plugin PUBLIC
   "${WRAPPER_ROOT}/include"
