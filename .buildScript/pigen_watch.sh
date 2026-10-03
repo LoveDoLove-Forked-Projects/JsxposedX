@@ -111,18 +111,6 @@ run_pigeon() {
   printf '\n>>> [Generating] %s\n' "$file_name"
   mkdir -p "$DART_OUT_DIR" "$kotlin_out_dir"
 
-  if [[ ! -f "$impl_file" ]]; then
-    printf '%s\n' \
-      "package $kotlin_package" \
-      '' \
-      'import android.content.Context' \
-      '' \
-      "class ${class_name}NativeImpl(val context: Context) : ${class_name}Native {" \
-      "    // TODO: Implement the ${class_name}Native interface." \
-      '}' > "$impl_file"
-    printf '>>> Created Impl template: %s\n' "${impl_file#"$PROJECT_DIR"/}"
-  fi
-
   (
     cd "$PROJECT_DIR"
     dart run pigeon \
@@ -131,6 +119,21 @@ run_pigeon() {
       --kotlin_out "${kotlin_file#"$PROJECT_DIR"/}" \
       --kotlin_package "$kotlin_package"
   )
+
+  # 只为包含 HostApi 的文件创建 Impl 模板（检查生成的 .g.kt 是否有接口定义）
+  if [[ -f "$kotlin_file" ]] && grep -q "^interface ${class_name}Native" "$kotlin_file"; then
+    if [[ ! -f "$impl_file" ]]; then
+      printf '%s\n' \
+        "package $kotlin_package" \
+        '' \
+        'import android.content.Context' \
+        '' \
+        "class ${class_name}NativeImpl(val context: Context) : ${class_name}Native {" \
+        "    // TODO: Implement the ${class_name}Native interface." \
+        '}' > "$impl_file"
+      printf '>>> Created Impl template: %s\n' "${impl_file#"$PROJECT_DIR"/}"
+    fi
+  fi
 }
 
 generate_all() {
