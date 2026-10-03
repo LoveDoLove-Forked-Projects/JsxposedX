@@ -675,6 +675,7 @@ class _DesktopWorkbenchView extends HookConsumerWidget {
                   children: [
                     Expanded(
                       child: _EditorWorkspace(
+                        key: ref.watch(_editorWorkspaceKeyProvider),
                         connected: connection.isConnected,
                       ),
                     ),
@@ -807,6 +808,11 @@ final _selectedScriptProvider =
     NotifierProvider<_SelectedScriptNotifier, DesktopScriptSelection?>(
       _SelectedScriptNotifier.new,
     );
+
+// 全局 key 用于访问编辑器状态以保存内容
+final _editorWorkspaceKeyProvider = Provider<GlobalKey<_EditorWorkspaceState>>(
+  (ref) => GlobalKey<_EditorWorkspaceState>(),
+);
 
 class _ProjectExplorer extends ConsumerWidget {
   const _ProjectExplorer();
@@ -1034,6 +1040,7 @@ class _ProjectTree extends HookConsumerWidget {
                 }
                 collapsedGroups.value = next;
               },
+              onSelect: onSelect,
             );
           case _ScriptRow(:final project, :final source, :final script):
             return _ScriptNode(
@@ -1234,12 +1241,14 @@ class _ScriptGroup extends ConsumerStatefulWidget {
     required this.expanded,
     required this.onToggle,
     required this.packageName,
+    required this.onSelect,
   });
 
   final String source;
   final bool expanded;
   final VoidCallback onToggle;
   final String packageName;
+  final ValueChanged<DesktopScriptSelection> onSelect;
 
   @override
   ConsumerState<_ScriptGroup> createState() => _ScriptGroupState();
@@ -1274,7 +1283,7 @@ class _ScriptGroupState extends ConsumerState<_ScriptGroup> {
         PopupMenuItem(
           child: Row(
             children: [
-              Icon(Icons.upload_outlined, size: 16, color: colors.onSurface),
+              Icon(Icons.download_outlined, size: 16, color: colors.onSurface),
               const SizedBox(width: 12),
               Text(context.l10n.importScript),
             ],
@@ -1333,6 +1342,16 @@ class _ScriptGroupState extends ConsumerState<_ScriptGroup> {
 
       if (mounted) {
         Toast.showToast(context, context.l10n.createSuccess);
+        // 创建成功后自动切换到新脚本
+        widget.onSelect(
+          DesktopScriptSelection(
+            packageName: widget.packageName,
+            source: widget.source,
+            localPath: fileName,
+            name: fileName,
+            enabled: false,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -1467,6 +1486,37 @@ class _ScriptNode extends ConsumerStatefulWidget {
 class _ScriptNodeState extends ConsumerState<_ScriptNode> {
   bool _hovering = false;
 
+  Future<void> _saveCurrentScriptBeforeSwitch() async {
+    // 获取当前正在编辑的脚本
+    final currentSelection = ref.read(_selectedScriptProvider);
+    if (currentSelection == null) return;
+
+    // 如果点击的是当前正在编辑的脚本，不需要保存
+    if (currentSelection.packageName == widget.packageName &&
+        currentSelection.source == widget.source &&
+        currentSelection.localPath == widget.script.localPath) {
+      return;
+    }
+
+    // 获取编辑器状态并保存
+    try {
+      final workspaceKey = ref.read(_editorWorkspaceKeyProvider);
+      final workspaceState = workspaceKey.currentState;
+      if (workspaceState != null && workspaceState._controller != null) {
+        await ref
+            .read(desktopConnectionProvider.notifier)
+            .writeScript(
+              packageName: currentSelection.packageName,
+              source: currentSelection.source,
+              localPath: currentSelection.localPath,
+              content: workspaceState._controller!.text,
+            );
+      }
+    } catch (e) {
+      // 保存失败不影响切换
+    }
+  }
+
   void _showScriptContextMenu(BuildContext context, Offset position) {
     final colors = context.colorScheme;
     showMenu(
@@ -1573,6 +1623,10 @@ class _ScriptNodeState extends ConsumerState<_ScriptNode> {
 
       if (mounted) {
         Toast.showToast(context, context.l10n.deleteSuccess);
+        // 删除脚本后，如果当前正在编辑该脚本，则清空编辑器
+        if (widget.active) {
+          ref.read(_selectedScriptProvider.notifier).selection = null;
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -1625,15 +1679,19 @@ class _ScriptNodeState extends ConsumerState<_ScriptNode> {
               : null,
         ),
         child: InkWell(
-          onTap: () => widget.onSelect(
-            DesktopScriptSelection(
-              packageName: widget.packageName,
-              source: widget.source,
-              localPath: widget.script.localPath,
-              name: widget.script.name,
-              enabled: widget.script.enabled,
-            ),
-          ),
+          onTap: () async {
+            // 切换脚本前先保存当前脚本
+            await _saveCurrentScriptBeforeSwitch();
+            widget.onSelect(
+              DesktopScriptSelection(
+                packageName: widget.packageName,
+                source: widget.source,
+                localPath: widget.script.localPath,
+                name: widget.script.name,
+                enabled: widget.script.enabled,
+              ),
+            );
+          },
           onSecondaryTapUp: (details) {
             _showScriptContextMenu(context, details.globalPosition);
           },
@@ -1884,7 +1942,7 @@ class _CapabilityRow extends StatelessWidget {
 }
 
 class _EditorWorkspace extends ConsumerStatefulWidget {
-  const _EditorWorkspace({required this.connected});
+  const _EditorWorkspace({super.key, required this.connected});
 
   final bool connected;
 
