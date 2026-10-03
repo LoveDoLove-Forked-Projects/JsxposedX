@@ -44,6 +44,9 @@ android {
         create("api101") {
             dimension = "xposedApi"
         }
+        create("api102") {
+            dimension = "xposedApi"
+        }
     }
 
     sourceSets {
@@ -52,6 +55,7 @@ android {
         }
         maybeCreate("api100").java.srcDirs("src/api100/java", "src/api100/kotlin")
         maybeCreate("api101").java.srcDirs("src/api101/java", "src/api101/kotlin")
+        maybeCreate("api102").java.srcDirs("src/api102/java", "src/api102/kotlin")
     }
 
     externalNativeBuild {
@@ -158,6 +162,7 @@ dependencies {
     implementation("org.smali:dexlib2:2.5.2")
     add("api100CompileOnly", project(":libxposed:api"))
     add("api101CompileOnly", "io.github.libxposed:api:101.0.1")
+    add("api102CompileOnly", "io.github.libxposed:api:102.0.0")
     implementation(project(":libxposed:service"))
 }
 

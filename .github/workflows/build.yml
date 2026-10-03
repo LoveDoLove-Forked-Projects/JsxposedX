@@ -14,12 +14,13 @@ on:
       flavor:
         description: 'Xposed flavor to build'
         required: true
-        default: 'both'
+        default: 'all'
         type: choice
         options:
           - api100
           - api101
-          - both
+          - api102
+          - all
       build_type:
         description: 'Build type'
         required: true
@@ -64,19 +65,19 @@ jobs:
           in_desktop="${{ github.event.inputs.build_desktop }}"
 
           if [[ "$event" == "workflow_dispatch" ]]; then
-            flavors=$([[ "$in_flavor" == "both" ]] && echo "api100 api101" || echo "$in_flavor")
+            flavors=$([[ "$in_flavor" == "all" ]] && echo "api100 api101 api102" || echo "$in_flavor")
             types=$([[ "$in_type" == "both" ]] && echo "debug release" || echo "$in_type")
             desktop="$in_desktop"
           elif [[ "$event" == "pull_request" ]]; then
-            flavors="api100 api101"
+            flavors="api100 api101 api102"
             types="debug"
             desktop="false"
           elif [[ "$ref" == refs/tags/V* ]]; then
-            flavors="api100 api101"
+            flavors="api100 api101 api102"
             types="release"
             desktop="true"
           else
-            flavors="api100 api101"
+            flavors="api100 api101 api102"
             types="debug"
             desktop="true"
           fi
